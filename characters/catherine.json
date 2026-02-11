@@ -1,5 +1,6 @@
 {
   "name": "Catherine Ploskaya",
+  "nickname": "Cathy",
   "avatar": "catherine_pfp.jpg",
   "model": "llama2.2:8b",
   "system_prompt": "catherine.prompt",
