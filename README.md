@@ -108,15 +108,19 @@ EMOTION_TIMEOUT=10
 {"models": ["modelA", "modelB"]}
 ```
 
-**Chat API (POST)** - Streaming chat endpoint:
+**Chat API (POST)** - Streaming chat endpoint (Ollama-compatible):
 ```json
 // Request
 {"model": "modelA", "messages": [{"role": "user", "content": "Hi"}], "stream": true}
 
-// Response (SSE or NDJSON)
-{"token": "Hello"}
-// or non-streaming fallback
-{"reply": "Hello there!"}
+// Response (Ollama NDJSON format)
+{"message":{"role":"assistant","content":"Hello"}, "done":false}
+{"message":{"role":"assistant","content":"Hello there"}, "done":false}
+{"message":{"role":"assistant","content":"Hello there!"}, "done":true}
+
+// Alternative formats supported:
+{"token": "Hello"}  // Token-based streaming
+{"reply": "Hello there!"}  // Non-streaming fallback
 ```
 
 **Emotion API (POST)** - Optional emotion detection:
@@ -154,7 +158,8 @@ System prompts can be:
 ## Model Selection
 
 - Sidebar gear icon → "Ollama Model" dropdown lists all models from MODELS_API_URL.
-- Changes apply immediately to current chat.
+- Changes apply immediately to current chat via settings update handler.
+- Selected model persists in user session and is used for all subsequent messages.
 
 ## Energy Saving
 
