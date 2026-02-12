@@ -42,7 +42,7 @@ else
 fi
 
 # Check if avatar exists
-if [ ! -f "static/catherine_pfp.jpg" ]; then
+if [ ! -f "public/avatars/catherine_pfp.jpg" ]; then
     echo "⚠️  Warning: Avatar file static/catherine_pfp.jpg not found"
     echo "   Please add your avatar image to the static directory"
 fi

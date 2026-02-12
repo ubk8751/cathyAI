@@ -1,5 +1,8 @@
+# Web UI / chat runtime
 chainlit
 ollama
-transformers
-torch --index-url https://download.pytorch.org/whl/cpu
+requests
+python-dotenv
+
+# Optional (only needed if you actually run tests in this container)
 pytest
