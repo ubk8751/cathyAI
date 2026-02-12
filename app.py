@@ -60,22 +60,37 @@ async def stream_chat(model, messages):
     try:
         async with client.stream("POST", CHAT_API_URL, json=payload, headers=headers, timeout=CHAT_TIMEOUT) as response:
             response.raise_for_status()
+            last = ""
             async for line in response.aiter_lines():
                 if not line.strip():
                     continue
-                # Handle SSE format
                 if line.startswith("data: "):
                     line = line[6:]
                 if line == "[DONE]":
                     break
+                
                 try:
                     chunk = json.loads(line)
-                    if "token" in chunk:
-                        yield chunk["token"]
-                    elif "message" in chunk and "content" in chunk["message"]:
-                        yield chunk["message"]["content"]
                 except json.JSONDecodeError:
                     continue
+                
+                # Ollama NDJSON: {"message":{"content":"..."}, "done":false}
+                msg = (chunk.get("message") or {})
+                content = msg.get("content")
+                if content is not None:
+                    # emit only new part
+                    if content.startswith(last):
+                        delta = content[len(last):]
+                    else:
+                        delta = content
+                    last = content
+                    if delta:
+                        yield delta
+                    continue
+                
+                # fallback if some other format appears
+                if "token" in chunk:
+                    yield chunk["token"]
     except httpx.TimeoutException:
         logger.error("Chat API timeout")
         raise Exception("Request timed out")
@@ -234,7 +249,7 @@ async def start():
 
 @cl.on_settings_update
 async def update_settings(settings):
-    pass
+    cl.user_session.set("settings", settings)
 
 @cl.on_message
 async def main(message: cl.Message):

@@ -143,6 +143,7 @@ def test_app_imports():
         import app
         assert hasattr(app, 'start'), "app.py missing start function"
         assert hasattr(app, 'main'), "app.py missing main function"
+        assert hasattr(app, 'update_settings'), "app.py missing update_settings function"
         assert hasattr(app, 'CHARACTERS'), "app.py missing CHARACTERS dict"
         assert hasattr(app, 'chat_profiles'), "app.py missing chat_profiles function"
         assert hasattr(app, 'update_activity'), "app.py missing update_activity function"
