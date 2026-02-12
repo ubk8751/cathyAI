@@ -1,26 +1,115 @@
+import os
+import httpx
 import chainlit as cl
 import json
 import time
 import logging
 from pathlib import Path
-import ollama
-from transformers import pipeline
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Emotion pipeline with error handling
-try:
-    emotion_pipeline = pipeline(
-        "text-classification",
-        model="bhadresh-savani/distilbert-base-uncased-emotion",
-        return_all_scores=False
-    )
-    logger.info("Emotion pipeline loaded successfully")
-except Exception as e:
-    logger.error(f"Failed to load emotion pipeline: {e}")
-    emotion_pipeline = None
+# API Configuration
+CHAT_API_URL = os.getenv("CHAT_API_URL")
+MODELS_API_URL = os.getenv("MODELS_API_URL")
+EMOTION_API_URL = os.getenv("EMOTION_API_URL")
+CHAT_API_KEY = os.getenv("CHAT_API_KEY")
+MODELS_API_KEY = os.getenv("MODELS_API_KEY")
+EMOTION_API_KEY = os.getenv("EMOTION_API_KEY")
+CHAT_TIMEOUT = int(float(os.getenv("CHAT_TIMEOUT", "120")))
+MODELS_TIMEOUT = int(float(os.getenv("MODELS_TIMEOUT", "10")))
+EMOTION_TIMEOUT = int(float(os.getenv("EMOTION_TIMEOUT", "10")))
+EMOTION_ENABLED = os.getenv("EMOTION_ENABLED", "0") == "1"
+
+# HTTP client
+client = httpx.AsyncClient()
+
+async def fetch_models():
+    """Fetch available models from external API."""
+    if not MODELS_API_URL:
+        logger.error("MODELS_API_URL not configured")
+        return []
+    
+    try:
+        headers = {"Authorization": f"Bearer {MODELS_API_KEY}"} if MODELS_API_KEY else {}
+        response = await client.get(MODELS_API_URL, headers=headers, timeout=MODELS_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        models = data.get("models", [])
+        logger.info(f"Fetched {len(models)} models from API")
+        return models
+    except Exception as e:
+        logger.error(f"Failed to fetch models: {e}")
+        return []
+
+async def stream_chat(model, messages):
+    """Stream chat response from external API."""
+    if not CHAT_API_URL:
+        raise Exception("CHAT_API_URL not configured")
+    
+    headers = {"Content-Type": "application/json"}
+    if CHAT_API_KEY:
+        headers["Authorization"] = f"Bearer {CHAT_API_KEY}"
+    
+    payload = {"model": model, "messages": messages, "stream": True}
+    
+    try:
+        async with client.stream("POST", CHAT_API_URL, json=payload, headers=headers, timeout=CHAT_TIMEOUT) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                # Handle SSE format
+                if line.startswith("data: "):
+                    line = line[6:]
+                if line == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(line)
+                    if "token" in chunk:
+                        yield chunk["token"]
+                    elif "message" in chunk and "content" in chunk["message"]:
+                        yield chunk["message"]["content"]
+                except json.JSONDecodeError:
+                    continue
+    except httpx.TimeoutException:
+        logger.error("Chat API timeout")
+        raise Exception("Request timed out")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Chat API error: {e}")
+        # Fallback to non-streaming
+        try:
+            payload["stream"] = False
+            response = await client.post(CHAT_API_URL, json=payload, headers=headers, timeout=CHAT_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+            if "reply" in data:
+                yield data["reply"]
+        except Exception as fallback_error:
+            logger.error(f"Non-streaming fallback failed: {fallback_error}")
+            raise
+
+async def detect_emotion(text):
+    """Detect emotion from text using external API."""
+    if not EMOTION_ENABLED or not EMOTION_API_URL:
+        return None
+    
+    try:
+        headers = {"Content-Type": "application/json"}
+        if EMOTION_API_KEY:
+            headers["Authorization"] = f"Bearer {EMOTION_API_KEY}"
+        
+        response = await client.post(EMOTION_API_URL, json={"text": text}, headers=headers, timeout=EMOTION_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        return {"label": data.get("label"), "score": data.get("score")}
+    except Exception as e:
+        logger.warning(f"Emotion detection failed: {e}")
+        return None
 
 # Load characters dynamically with validation
 CHARACTERS = {}
@@ -110,21 +199,17 @@ async def start():
 
     # Model selection sidebar with error handling
     try:
-        model_list = ollama.list()
-        model_names = []
-        for m in model_list.get("models", []):
-            model_names.append(m.get("name") or m.get("model", "unknown"))
+        model_names = await fetch_models()
         
         if model_names:
-            # Use first available model as default
             default_model = model_names[0]
-            logger.info(f"Found {len(model_names)} Ollama models, using {default_model} as default")
+            logger.info(f"Found {len(model_names)} models, using {default_model} as default")
         else:
-            logger.warning("No Ollama models found")
+            logger.warning("No models available")
             model_names = ["No models available"]
             default_model = None
     except Exception as e:
-        logger.error(f"Failed to fetch Ollama models: {e}")
+        logger.error(f"Failed to fetch models: {e}")
         model_names = ["No models available"]
         default_model = None
 
@@ -164,7 +249,7 @@ async def main(message: cl.Message):
     model_available = cl.user_session.get("model_available", False)
     if not model_available:
         author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
-        await cl.Message(content="⚠️ No model loaded. Please check Ollama configuration.", author=author_label).send()
+        await cl.Message(content="⚠️ No models available. Please check API configuration.", author=author_label).send()
         return
 
     settings = cl.user_session.get("settings", {})
@@ -181,44 +266,25 @@ async def main(message: cl.Message):
     await msg.send()
 
     try:
-        logger.info(f"Calling Ollama with model: {selected_model}")
-        stream = ollama.chat(
-            model=selected_model,
-            messages=history,
-            stream=True,
-            options={"num_gpu": 999, "keep_alive": 0}
-        )
-        for chunk in stream:
-            if chunk.get("message", {}).get("content"):
-                token = chunk["message"]["content"]
-                reply += token
-                await msg.stream_token(token)
-    except ollama.ResponseError as e:
-        logger.error(f"Ollama model error: {e}")
-        if "not found" in str(e).lower() or "does not exist" in str(e).lower():
-            reply = "⚠️ No model loaded. Please check Ollama configuration."
-            await msg.stream_token(reply)
-        else:
-            await msg.update()
-            await cl.Message(content=f"❌ Ollama error: {str(e)}").send()
-            return
+        logger.info(f"Calling chat API with model: {selected_model}")
+        async for token in stream_chat(selected_model, history):
+            reply += token
+            await msg.stream_token(token)
     except Exception as e:
-        logger.error(f"Ollama connection error: {e}")
-        reply = "⚠️ No model loaded. Cannot connect to Ollama server."
+        logger.error(f"Chat API error: {e}")
+        reply = f"⚠️ Chat API error: {str(e)}"
         await msg.stream_token(reply)
 
     await msg.update()
 
     # Emotion detection with error handling
-    if reply.strip() and emotion_pipeline:
-        try:
-            emotion_result = emotion_pipeline(reply)[0]
+    if reply.strip() and EMOTION_ENABLED:
+        emotion_result = await detect_emotion(reply)
+        if emotion_result and emotion_result.get("label"):
             await cl.Message(
                 content=f"Emotion: {emotion_result['label'].capitalize()} (confidence: {emotion_result['score']:.2f})",
                 disable_human_feedback=True
             ).send()
-        except Exception as e:
-            logger.error(f"Emotion detection error: {e}")
 
     history.append({"role": "assistant", "content": reply})
     cl.user_session.set("history", history)

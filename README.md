@@ -1,12 +1,13 @@
 # cathyAI
 
-A customizable AI companion web app built with Chainlit, featuring multi-character support, live Ollama model switching, emotion detection, and energy-efficient GPU management.
+A customizable AI companion web app built with Chainlit, featuring multi-character support, live model switching via external APIs, optional emotion detection, and energy-efficient container management.
 
 ## Features
 
 - Multi-Character Support — JSON-based characters with avatars, greetings, and individual system prompts; switch via top-left profile dropdown
-- Live Model Switching — Dropdown with all downloaded Ollama models (sidebar settings)
-- Energy Efficient — Immediate model unload after responses + full container shutdown after 5 min inactivity
+- Live Model Switching — Dropdown with all available models from external API (sidebar settings)
+- API-Based Architecture — Connects to external chat, model listing, and emotion detection APIs
+- Energy Efficient — Full container shutdown after 5 min inactivity
 - Modern UI — Native Chainlit interface with profile avatars and responsive chat bubbles
 - Docker Ready — Containerized with docker-compose
 - CI/CD Pipeline — Automated testing + auto-merge/deploy via GitHub Actions
@@ -14,9 +15,9 @@ A customizable AI companion web app built with Chainlit, featuring multi-charact
 ## Architecture
 
 - Frontend/UI: Chainlit (native responsive chat with profiles)
-- Backend: Python + Ollama for LLM inference
+- Backend: Python + httpx for API communication
+- LLM Server: External API (configurable via environment variables)
 - Deployment: Docker
-- LLM Server: Ollama
 
 ## Project Structure
 
@@ -36,6 +37,7 @@ cathyAI/
 ├── docker-compose.yaml             # Docker orchestration
 ├── Dockerfile                      # Container build
 ├── requirements.txt                # Python dependencies
+├── .env.template                   # Environment variable template
 ├── watchdog.sh                     # Inactivity shutdown script
 ├── setup.sh                        # Local dev environment setup
 ├── setup_git.sh                    # Git branch setup helper
@@ -50,6 +52,10 @@ cathyAI/
 ```bash
 ./setup.sh                          # Creates venv + installs deps
 
+# Configure API endpoints
+cp .env.template .env
+# Edit .env with your API URLs
+
 chainlit run app.py                 # Launch app
 
 # Access at http://localhost:8000
@@ -58,6 +64,10 @@ chainlit run app.py                 # Launch app
 ### Docker Deployment (Proxmox CT 202)
 
 ```bash
+# Configure environment
+cp .env.template .env
+# Edit .env with your API endpoints
+
 docker compose up -d --build        # Run in background
 
 # Rebuild on changes
@@ -65,6 +75,57 @@ docker compose up -d --build
 
 # Stop
 docker compose down
+```
+
+## Configuration
+
+### Environment Variables (.env)
+
+```bash
+# Required: External API endpoints
+CHAT_API_URL=http://your-api:11434/api/chat
+MODELS_API_URL=http://your-api:11434/api/tags
+
+# Optional: Emotion detection (disabled by default)
+EMOTION_ENABLED=0
+EMOTION_API_URL=http://your-api:8001/emotion
+
+# Optional: API authentication
+CHAT_API_KEY=your_key_here
+MODELS_API_KEY=your_key_here
+EMOTION_API_KEY=your_key_here
+
+# Optional: Timeouts (seconds)
+CHAT_TIMEOUT=120
+MODELS_TIMEOUT=10
+EMOTION_TIMEOUT=10
+```
+
+### API Requirements
+
+**Models API (GET)** - Returns list of available models:
+```json
+{"models": ["modelA", "modelB"]}
+```
+
+**Chat API (POST)** - Streaming chat endpoint:
+```json
+// Request
+{"model": "modelA", "messages": [{"role": "user", "content": "Hi"}], "stream": true}
+
+// Response (SSE or NDJSON)
+{"token": "Hello"}
+// or non-streaming fallback
+{"reply": "Hello there!"}
+```
+
+**Emotion API (POST)** - Optional emotion detection:
+```json
+// Request
+{"text": "I am happy!"}
+
+// Response
+{"label": "joy", "score": 0.87}
 ```
 
 ## Character Configuration
@@ -92,12 +153,11 @@ System prompts can be:
 
 ## Model Selection
 
-- Sidebar gear icon → "Ollama Model" dropdown lists all downloaded models.
+- Sidebar gear icon → "Ollama Model" dropdown lists all models from MODELS_API_URL.
 - Changes apply immediately to current chat.
 
 ## Energy Saving
 
-- Models unload instantly after each response (`keep_alive: 0`).
 - Full container shutdown after 5 min inactivity:
 
 ```bash
@@ -137,14 +197,15 @@ Tests cover:
 - External system prompt files
 - Avatar files in public/avatars/
 - Docker/requirements/watchdog presence
-- App import & character loading logic
+- App import & API function existence
+- Environment template configuration
 
 ## Tech Stack
 
 - **Framework**: [Chainlit](https://github.com/Chainlit/chainlit)
 - **UI Components**: [LiftKit](https://github.com/Chainlift/liftkit)
-- **LLM**: [Ollama](https://ollama.ai/) (llama3.1:8b)
-- **Emotion Detection**: [DistilBERT](https://huggingface.co/bhadresh-savani/distilbert-base-uncased-emotion)
+- **HTTP Client**: [httpx](https://www.python-httpx.org/)
+- **External APIs**: Chat, Model Listing, Emotion Detection (configurable)
 - **Containerization**: Docker + Docker Compose
 - **CI/CD**: GitHub Actions
 - **Deployment**: Proxmox LXC containers

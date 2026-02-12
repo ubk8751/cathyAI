@@ -89,15 +89,18 @@ def test_docker_compose_structure():
     assert "services:" in compose, "docker-compose.yaml missing services section"
     assert "ports:" in compose, "docker-compose.yaml missing ports configuration"
     assert "8000" in compose, "docker-compose.yaml missing port 8000"
-    assert "OLLAMA_HOST" in compose, "docker-compose.yaml missing OLLAMA_HOST environment variable"
 
 def test_requirements_has_dependencies():
     """Test that requirements.txt has necessary dependencies"""
     content = (REPO_ROOT / "requirements.txt").read_text()
-    required = ["chainlit", "ollama", "transformers", "torch"]
+    required = ["chainlit", "httpx", "python-dotenv"]
     
     for dep in required:
         assert dep in content, f"Missing dependency: {dep}"
+    
+    # Ensure old dependencies are removed
+    assert "ollama" not in content, "ollama should be removed"
+    assert "transformers" not in content, "transformers should be removed"
 
 def test_watchdog_script_exists():
     """Test that watchdog script exists and has correct logic"""
@@ -137,35 +140,35 @@ def test_gitignore_has_python_patterns():
 def test_app_imports():
     """Test that app.py can be imported without errors"""
     try:
-        # Mock transformers pipeline to avoid downloading models
-        with patch('transformers.pipeline'):
-            import app
-            assert hasattr(app, 'start'), "app.py missing start function"
-            assert hasattr(app, 'main'), "app.py missing main function"
-            assert hasattr(app, 'CHARACTERS'), "app.py missing CHARACTERS dict"
-            assert hasattr(app, 'chat_profiles'), "app.py missing chat_profiles function"
-            assert hasattr(app, 'update_activity'), "app.py missing update_activity function"
+        import app
+        assert hasattr(app, 'start'), "app.py missing start function"
+        assert hasattr(app, 'main'), "app.py missing main function"
+        assert hasattr(app, 'CHARACTERS'), "app.py missing CHARACTERS dict"
+        assert hasattr(app, 'chat_profiles'), "app.py missing chat_profiles function"
+        assert hasattr(app, 'update_activity'), "app.py missing update_activity function"
+        assert hasattr(app, 'fetch_models'), "app.py missing fetch_models function"
+        assert hasattr(app, 'stream_chat'), "app.py missing stream_chat function"
+        assert hasattr(app, 'detect_emotion'), "app.py missing detect_emotion function"
     except Exception as e:
         pytest.fail(f"Failed to import app.py: {e}")
 
 def test_character_loading_logic():
     """Test character loading with system prompt file resolution"""
-    with patch('transformers.pipeline'):
-        import app
+    import app
+    
+    assert len(app.CHARACTERS) > 0, "No characters loaded"
+    
+    for char_id, char_data in app.CHARACTERS.items():
+        # System prompt should be loaded as text, not filename
+        prompt = char_data.get("system_prompt", "")
+        assert len(prompt) > 50, f"System prompt for {char_id} seems too short or not loaded"
+        assert prompt.startswith("You"), f"System prompt for {char_id} not properly loaded"
         
-        assert len(app.CHARACTERS) > 0, "No characters loaded"
-        
-        for char_id, char_data in app.CHARACTERS.items():
-            # System prompt should be loaded as text, not filename
-            prompt = char_data.get("system_prompt", "")
-            assert len(prompt) > 50, f"System prompt for {char_id} seems too short or not loaded"
-            assert prompt.startswith("You"), f"System prompt for {char_id} not properly loaded"
-            
-            # Validate all required fields are present
-            assert "name" in char_data, f"Character {char_id} missing name"
-            assert "avatar" in char_data, f"Character {char_id} missing avatar"
-            assert "model" in char_data, f"Character {char_id} missing model"
-            assert "greeting" in char_data, f"Character {char_id} missing greeting"
+        # Validate all required fields are present
+        assert "name" in char_data, f"Character {char_id} missing name"
+        assert "avatar" in char_data, f"Character {char_id} missing avatar"
+        assert "model" in char_data, f"Character {char_id} missing model"
+        assert "greeting" in char_data, f"Character {char_id} missing greeting"
 
 def test_multiple_characters_exist():
     """Test that multiple characters exist for dropdown functionality"""
@@ -174,35 +177,56 @@ def test_multiple_characters_exist():
 
 def test_logging_configured():
     """Test that app has logging configured"""
-    with patch('transformers.pipeline'):
-        import app
-        assert hasattr(app, 'logger'), "app.py missing logger"
-        assert app.logger is not None, "Logger not initialized"
+    import app
+    assert hasattr(app, 'logger'), "app.py missing logger"
+    assert app.logger is not None, "Logger not initialized"
 
 def test_nickname_fallback_logic():
     """Test that nickname falls back to first name correctly"""
-    with patch('transformers.pipeline'):
-        import app
+    import app
+    
+    for char_id, char_data in app.CHARACTERS.items():
+        name = char_data.get("name", "")
+        nickname = char_data.get("nickname", "")
         
-        for char_id, char_data in app.CHARACTERS.items():
-            name = char_data.get("name", "")
-            nickname = char_data.get("nickname", "")
-            
-            # Test the logic used in app.py for author_label
-            if nickname:
-                display_name = nickname
-            else:
-                display_name = name.split(" ", 1)[0] if " " in name else name
-            
-            assert len(display_name) > 0, f"Display name empty for {char_id}"
-            # For Catherine Ploskaya without nickname, should be "Catherine"
-            if name == "Catherine Ploskaya" and not nickname:
-                assert display_name == "Catherine", f"Expected 'Catherine' but got '{display_name}'"
+        # Test the logic used in app.py for author_label
+        if nickname:
+            display_name = nickname
+        else:
+            display_name = name.split(" ", 1)[0] if " " in name else name
+        
+        assert len(display_name) > 0, f"Display name empty for {char_id}"
+        # For Catherine Ploskaya without nickname, should be "Catherine"
+        if name == "Catherine Ploskaya" and not nickname:
+            assert display_name == "Catherine", f"Expected 'Catherine' but got '{display_name}'"
 
 def test_error_handling_in_character_loading():
     """Test that app handles character loading errors gracefully"""
-    with patch('transformers.pipeline'):
-        import app
-        # App should load successfully even if some characters fail
-        # This is validated by checking that CHARACTERS dict exists
-        assert isinstance(app.CHARACTERS, dict), "CHARACTERS should be a dict even if loading fails"
+    import app
+    # App should load successfully even if some characters fail
+    # This is validated by checking that CHARACTERS dict exists
+    assert isinstance(app.CHARACTERS, dict), "CHARACTERS should be a dict even if loading fails"
+
+def test_env_template_exists():
+    """Test that .env.template exists with required variables"""
+    env_template = REPO_ROOT / ".env.template"
+    assert env_template.exists(), ".env.template not found"
+    content = env_template.read_text()
+    assert "CHAT_API_URL" in content, ".env.template missing CHAT_API_URL"
+    assert "MODELS_API_URL" in content, ".env.template missing MODELS_API_URL"
+    assert "EMOTION_API_URL" in content, ".env.template missing EMOTION_API_URL"
+    assert "EMOTION_ENABLED" in content, ".env.template missing EMOTION_ENABLED"
+
+def test_api_functions_exist():
+    """Test that API integration functions exist"""
+    import app
+    import inspect
+    
+    assert callable(app.fetch_models), "fetch_models should be callable"
+    assert callable(app.stream_chat), "stream_chat should be callable"
+    assert callable(app.detect_emotion), "detect_emotion should be callable"
+    
+    # Check they are async functions
+    assert inspect.iscoroutinefunction(app.fetch_models), "fetch_models should be async"
+    assert inspect.isasyncgenfunction(app.stream_chat), "stream_chat should be async generator"
+    assert inspect.iscoroutinefunction(app.detect_emotion), "detect_emotion should be async"

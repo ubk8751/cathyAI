@@ -23,3 +23,7 @@ git branch --set-upstream-to=origin/dmz dmz
 echo "✓ Git environment configured!"
 echo "You are now on the 'dmz' branch"
 echo "Push with: git push"
+echo ""
+echo "Setting up commit message template..."
+git config commit.template .gitmessage
+echo "✓ Commit template configured"
