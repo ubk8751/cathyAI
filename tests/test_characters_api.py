@@ -16,7 +16,7 @@ class TestCharactersAPI:
     """Test suite for characters_api with isolated imports."""
     
     @pytest.fixture(autouse=True)
-    def setup_teardown(self):
+    def setup_teardown(self, monkeypatch):
         """Setup and teardown for each test to ensure clean imports."""
         # Setup
         original_path = sys.path.copy()
@@ -24,7 +24,12 @@ class TestCharactersAPI:
         
         os.chdir(REPO_ROOT)
         sys.path.insert(0, str(REPO_ROOT / "characters_api"))
+        
+        # Set environment variables for container/local compatibility
         os.environ["CHAR_DIR"] = str(REPO_ROOT / "characters")
+        os.environ["PROMPT_DIR"] = str(REPO_ROOT / "characters" / "system_prompt")
+        os.environ["INFO_DIR"] = str(REPO_ROOT / "characters" / "character_info")
+        os.environ["AVATAR_DIR"] = str(REPO_ROOT / "public" / "avatars")
         os.environ["CHAR_API_KEY"] = ""
         
         from app import app, CHAR_DIR, PROMPT_DIR, INFO_DIR
