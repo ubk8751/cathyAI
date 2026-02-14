@@ -1,99 +1,121 @@
 # cathyAI
 
-A customizable AI companion web app built with Chainlit, featuring multi-character support, live model switching via external APIs, optional emotion detection, and energy-efficient container management.
+A modular AI companion platform with a Chainlit web UI and FastAPI character management service. Features multi-character support, live model switching, and shared character data between services.
+
+## Overview
+
+cathyAI consists of two independent services:
+
+- **webbui_chat** - Chainlit-based chat UI (port 8000)
+- **characters_api** - FastAPI character data service (port 8090)
+
+Both services share character configurations and avatars from the root `characters/` and `public/` directories.
 
 ## Features
 
-- Multi-Character Support — JSON-based characters with avatars, greetings, and individual system prompts; switch via top-left profile dropdown
-- Live Model Switching — Dropdown with all available models from external API (sidebar settings)
-- API-Based Architecture — Connects to external chat, model listing, and emotion detection APIs
-- Energy Efficient — Full container shutdown after 5 min inactivity
-- Modern UI — Native Chainlit interface with profile avatars and responsive chat bubbles
-- Docker Ready — Containerized with docker-compose
-- CI/CD Pipeline — Automated testing + auto-merge/deploy via GitHub Actions
-
-## Architecture
-
-- Frontend/UI: Chainlit (native responsive chat with profiles)
-- Backend: Python + httpx for API communication
-- LLM Server: External API (configurable via environment variables)
-- Deployment: Docker
+- **Multi-Character Support** - JSON-based characters with avatars, greetings, and system prompts
+- **Character API** - RESTful API for character data with file resolution and alias management
+- **Live Model Switching** - Dynamic model selection via external API
+- **API-Based Architecture** - External chat, model listing, and emotion detection APIs
+- **Energy Efficient** - Container shutdown after 5 min inactivity
+- **Docker Ready** - Each service has its own docker-compose configuration
+- **CI/CD Pipeline** - Automated testing with GitHub Actions
 
 ## Project Structure
 
 ```
 cathyAI/
-├── app.py                          # Main Chainlit application
-├── characters/
-│   ├── [character].json            # Character configuration
-│   ├── system_prompt/              # External system prompt files
-│   └── character_info/             # Optional character lore/backstory
-├── public/
-│   └── avatars/                    # Character avatar images (served automatically)
-├── tests/
-│   └── test_app.py                 # Comprehensive test suite
-├── .github/workflows/
-│   └── test.yml                    # CI/CD with Debian container tests + auto-merge
-├── docker-compose.yaml             # Docker orchestration
-├── Dockerfile                      # Container build
-├── requirements.txt                # Python dependencies
-├── .env.template                   # Environment variable template
-├── watchdog.sh                     # Inactivity shutdown script
-├── setup.sh                        # Local dev environment setup
-├── setup_git.sh                    # Git branch setup helper
-├── .gitignore                      # Ignores caches and venv
-└── README.md                       # This file
+├── characters/                     # Shared character data
+│   ├── *.json                      # Character configurations
+│   ├── system_prompt/              # External prompt files
+│   └── character_info/             # Character backstories
+├── public/avatars/                 # Shared avatar images
+├── webbui_chat/                    # Chainlit chat UI service
+│   ├── app.py                      # Main application
+│   ├── Dockerfile
+│   ├── docker-compose.yaml
+│   ├── requirements.txt
+│   └── .env
+├── characters_api/                 # FastAPI character service
+│   ├── app.py                      # API endpoints
+│   ├── Dockerfile
+│   ├── docker-compose.yaml
+│   ├── requirements.txt
+│   └── .env
+├── tests/                          # Test suites
+│   ├── test_app.py                 # Shared resource tests
+│   ├── test_webbui_chat.py         # Chat UI tests
+│   └── test_characters_api.py      # API tests
+├── .github/workflows/test.yml      # CI/CD pipeline
+├── .env.template                   # Environment template
+├── watchdog.sh                     # Inactivity monitor
+└── README.md
 ```
 
-## Setup
+## Shared Resources
 
-### Local Development
+### Character Configuration
 
-```bash
-./setup.sh                          # Creates venv + installs deps
+Add JSON files in `characters/`:
 
-# Configure API endpoints
-cp .env.template .env
-# Edit .env with your API URLs
-
-chainlit run app.py                 # Launch app
-
-# Access at http://localhost:8000
+```json
+{
+  "name": "Character name",
+  "nickname": "Optional nickname",
+  "avatar": "character_pfp.jpg",
+  "greeting": "Hello!",
+  "system_prompt": "character.prompt",
+  "description": "character.info",
+  "model": "llama3.1:8b"
+}
 ```
 
-### Docker Deployment (Proxmox CT 202)
+System prompts can be:
+- Inline text starting with "You"
+- Filename referencing `characters/system_prompt/*.prompt`
+
+Avatars go in `public/avatars/` and are served by both services.
+
+---
+
+## webbui_chat Service
+
+Chainlit-based chat interface with multi-character profiles and live model switching.
+
+### Setup
 
 ```bash
+cd webbui_chat
+
 # Configure environment
 cp .env.template .env
 # Edit .env with your API endpoints
 
-docker compose up -d --build        # Run in background
-
-# Rebuild on changes
+# Docker
 docker compose up -d --build
 
-# Stop
-docker compose down
+# Local development
+pip install -r requirements.txt
+chainlit run app.py
 ```
 
-## Configuration
+Access at http://localhost:8000
 
-### Environment Variables (.env)
+### Environment Variables
 
 ```bash
 # Required: External API endpoints
 CHAT_API_URL=http://your-api:11434/api/chat
 MODELS_API_URL=http://your-api:11434/api/tags
 
-# Optional: Emotion detection (disabled by default)
+# Optional: Emotion detection
 EMOTION_ENABLED=0
 EMOTION_API_URL=http://your-api:8001/emotion
 
 # Optional: API authentication
-CHAT_API_KEY=your_key_here
-MODELS_API_KEY=your_key_here
-EMOTION_API_KEY=your_key_here
+CHAT_API_KEY=
+MODELS_API_KEY=
+EMOTION_API_KEY=
 
 # Optional: Timeouts (seconds)
 CHAT_TIMEOUT=120
@@ -101,7 +123,7 @@ MODELS_TIMEOUT=10
 EMOTION_TIMEOUT=10
 ```
 
-### API Requirements
+### External API Requirements
 
 **Models API (GET)** - Returns list of available models:
 ```json
@@ -115,12 +137,7 @@ EMOTION_TIMEOUT=10
 
 // Response (Ollama NDJSON format)
 {"message":{"role":"assistant","content":"Hello"}, "done":false}
-{"message":{"role":"assistant","content":"Hello there"}, "done":false}
 {"message":{"role":"assistant","content":"Hello there!"}, "done":true}
-
-// Alternative formats supported:
-{"token": "Hello"}  // Token-based streaming
-{"reply": "Hello there!"}  // Non-streaming fallback
 ```
 
 **Emotion API (POST)** - Optional emotion detection:
@@ -132,43 +149,132 @@ EMOTION_TIMEOUT=10
 {"label": "joy", "score": 0.87}
 ```
 
-## Character Configuration
+### Features
 
-Add JSON files in `characters/`:
+- Character profile dropdown with avatars
+- Live model switching via sidebar
+- Streaming chat responses
+- Optional emotion detection
+- Session-based conversation history
+- Activity tracking for watchdog
 
+---
+
+## characters_api Service
+
+FastAPI service providing RESTful access to character data with automatic file resolution.
+
+### Setup
+
+```bash
+cd characters_api
+
+# Configure environment
+cp .env.template .env
+# Edit .env with your settings
+
+# Docker
+docker compose up -d --build
+
+# Local development
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 8090
+```
+
+Access at http://localhost:8090
+
+### Environment Variables
+
+```bash
+# Optional: API authentication
+CHAR_API_KEY=
+
+# Optional: Public URL for avatar links
+HOST_URL=http://192.168.1.58:8090
+```
+
+### API Endpoints
+
+**GET /health** - Health check
+```json
+{"ok": true, "char_dir": "/app/characters", ...}
+```
+
+**GET /characters** - List all characters
 ```json
 {
-  "name": "Character name",
-  "nickname": "[OPTIONAL] Nickname",             
-  "avatar": "character_pfp.jpg",    
-  "greeting": "Hello!",
-  "system_prompt": "character.prompt",
-  "description": "character.info",
-  "model": "llama3.1:8b"
+  "characters": [
+    {
+      "id": "[character_name]",
+      "name": "[full_character_name]",
+      "nickname": null|[list of alternative names],
+      "model": "llama3.1:8b",
+      "greeting": "Hello!",
+      "avatar": "[id]_pfp.jpg",
+      "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
+      "aliases": [full_list_of_names]
+    }
+  ]
 }
 ```
 
-System prompts can be:
-- Inline text starting with "You"
-- Filename referencing `characters/system_prompt/*.prompt`
+**GET /characters/{char_id}** - Get character details
+```json
+{
+  "name": "[full_character_name]",
+  "system_prompt": "You are [character]...",
+  "character_background": "[character] is...",
+  "aliases": [full_list_of_names],
+  "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
+  ...
+}
+```
 
-- Avatars auto-show in profile dropdown and chat bubbles.
-- Multiple characters → dropdown appears for switching (new isolated session each).
+**GET /avatars/{filename}** - Serve avatar image
 
-## Model Selection
+### Features
 
-- Sidebar gear icon → "Ollama Model" dropdown lists all models from MODELS_API_URL.
-- Changes apply immediately to current chat via settings update handler.
-- Selected model persists in user session and is used for all subsequent messages.
+- Automatic system prompt file resolution
+- Character alias generation (name, nickname, ID)
+- Avatar URL generation
+- Optional API key authentication
+- Matrix-specific field support
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test suite
+pytest tests/test_webbui_chat.py -v
+pytest tests/test_characters_api.py -v
+
+# Run specific test
+pytest tests/test_app.py::test_character_json_structure
+```
+
+Test coverage:
+- **test_app.py** - Shared resources (characters, avatars, scripts)
+- **test_webbui_chat.py** - Chat UI (Docker, imports, character loading)
+- **test_characters_api.py** - API endpoints (health, characters, avatars)
+
+---
 
 ## Energy Saving
 
-- Full container shutdown after 5 min inactivity:
+Full container shutdown after 5 min inactivity:
 
 ```bash
 # Add to crontab
 * * * * * /opt/cathyAI/watchdog.sh
 ```
+
+The watchdog script monitors `/tmp/last_activity` and shuts down containers when inactive.
+
+---
 
 ## Development Workflow
 
@@ -180,40 +286,28 @@ System prompts can be:
    git push origin dmz
    ```
 
-2. GitHub Actions tests run automatically.
-3. On pass → auto-merge to `main`.
+2. GitHub Actions runs tests automatically
+3. On pass → auto-merge to `main`
 4. Nightly auto-deploy:
    ```bash
-   0 2 * * * cd /opt/cathyAI && git pull origin main && docker compose up -d --build
+   0 2 * * * cd /opt/cathyAI && git pull origin main && \
+     cd webbui_chat && docker compose up -d --build && \
+     cd ../characters_api && docker compose up -d --build
    ```
 
-## Testing
-
-```bash
-pytest
-
-pytest tests/test_app.py -v
-
-pytest tests/test_app.py::test_avatar_files_exist
-```
-
-Tests cover:
-- JSON structure & required fields
-- External system prompt files
-- Avatar files in public/avatars/
-- Docker/requirements/watchdog presence
-- App import & API function existence
-- Environment template configuration
+---
 
 ## Tech Stack
 
-- **Framework**: [Chainlit](https://github.com/Chainlit/chainlit)
-- **UI Components**: [LiftKit](https://github.com/Chainlift/liftkit)
+- **Chat UI**: [Chainlit](https://github.com/Chainlit/chainlit)
+- **API Framework**: [FastAPI](https://fastapi.tiangolo.com/)
 - **HTTP Client**: [httpx](https://www.python-httpx.org/)
-- **External APIs**: Chat, Model Listing, Emotion Detection (configurable)
+- **Testing**: pytest with class-based fixtures
 - **Containerization**: Docker + Docker Compose
 - **CI/CD**: GitHub Actions
 - **Deployment**: Proxmox LXC containers
+
+---
 
 ## License
 

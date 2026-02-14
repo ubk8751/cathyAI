@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  webbui_chat:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../characters:/app/characters
+      - ../public:/app/public
+      - /tmp/last_activity:/tmp/last_activity
+    env_file:
+      - .env
+    restart: unless-stopped
