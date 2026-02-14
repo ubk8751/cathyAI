@@ -295,6 +295,13 @@ The watchdog script monitors `/tmp/last_activity` and shuts down containers when
      cd ../characters_api && docker compose up -d --build
    ```
 
+## Development Standards
+
+See [.amazonq/rules/dev-standards.md](.amazonq/rules/dev-standards.md) for detailed development guidelines including:
+- PEP 8 compliance and reST docstring standards
+- Commit message format requirements
+- Post-change documentation update requirements
+
 ---
 
 ## Tech Stack
