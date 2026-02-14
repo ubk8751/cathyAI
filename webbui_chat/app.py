@@ -1,3 +1,9 @@
+"""cathyAI - Multi-character AI companion web application.
+
+This module provides the main Chainlit application with multi-character support,
+live model switching, and optional emotion detection via external APIs.
+"""
+
 import os
 import httpx
 import chainlit as cl
@@ -29,7 +35,11 @@ EMOTION_ENABLED = os.getenv("EMOTION_ENABLED", "0") == "1"
 client = httpx.AsyncClient()
 
 async def fetch_models():
-    """Fetch available models from external API."""
+    """Fetch available models from external API.
+    
+    :return: List of model names available from the API
+    :rtype: list[str]
+    """
     if not MODELS_API_URL:
         logger.error("MODELS_API_URL not configured")
         return []
@@ -47,7 +57,16 @@ async def fetch_models():
         return []
 
 async def stream_chat(model, messages):
-    """Stream chat response from external API."""
+    """Stream chat responses from external API (Ollama-compatible).
+    
+    :param model: Name of the model to use for chat
+    :type model: str
+    :param messages: List of message dictionaries with role and content
+    :type messages: list[dict]
+    :yield: Token strings from the streaming response
+    :rtype: str
+    :raises Exception: If API request fails or times out
+    """
     if not CHAT_API_URL:
         raise Exception("CHAT_API_URL not configured")
     
@@ -109,7 +128,13 @@ async def stream_chat(model, messages):
             raise
 
 async def detect_emotion(text):
-    """Detect emotion from text using external API."""
+    """Detect emotion from text using external API.
+    
+    :param text: Text content to analyze for emotion
+    :type text: str
+    :return: Dictionary with emotion label and confidence score, or None if disabled/failed
+    :rtype: dict or None
+    """
     if not EMOTION_ENABLED or not EMOTION_API_URL:
         return None
     
@@ -128,7 +153,7 @@ async def detect_emotion(text):
 
 # Load characters dynamically with validation
 CHARACTERS = {}
-char_dir = Path("characters")
+char_dir = Path("../characters")
 if not char_dir.exists():
     logger.error("Characters directory not found")
 else:
@@ -146,7 +171,7 @@ else:
             
             # Load system prompt from external file if specified
             if "system_prompt" in char_data and not char_data["system_prompt"].startswith("You"):
-                prompt_path = Path("characters/system_prompt") / char_data["system_prompt"]
+                prompt_path = Path("../characters/system_prompt") / char_data["system_prompt"]
                 if prompt_path.exists():
                     char_data["system_prompt"] = prompt_path.read_text().strip()
                 else:
@@ -161,8 +186,12 @@ else:
 if not CHARACTERS:
     logger.error("No characters loaded! App may not function correctly.")
 
-# Activity tracking with error handling
 def update_activity():
+    """Update activity timestamp for watchdog monitoring.
+    
+    Writes current Unix timestamp to /tmp/last_activity for container
+    shutdown monitoring by watchdog.sh script.
+    """
     try:
         Path("/tmp/last_activity").write_text(str(int(time.time())))
     except Exception as e:
@@ -172,6 +201,11 @@ update_activity()
 
 @cl.set_chat_profiles
 async def chat_profiles():
+    """Define available chat profiles from loaded characters.
+    
+    :return: List of ChatProfile objects for character selection
+    :rtype: list[cl.ChatProfile]
+    """
     if not CHARACTERS:
         logger.warning("No characters available for profiles")
         return []
@@ -193,6 +227,11 @@ async def chat_profiles():
 
 @cl.on_chat_start
 async def start():
+    """Initialize chat session with selected character and model settings.
+    
+    Sets up user session with character data, conversation history,
+    and model selection dropdown in sidebar.
+    """
     update_activity()
 
     if not CHARACTERS:
@@ -249,10 +288,22 @@ async def start():
 
 @cl.on_settings_update
 async def update_settings(settings):
+    """Handle model selection changes from sidebar settings.
+    
+    :param settings: Updated settings dictionary from user interaction
+    :type settings: dict
+    """
     cl.user_session.set("settings", settings)
 
 @cl.on_message
 async def main(message: cl.Message):
+    """Process incoming user messages and generate AI responses.
+    
+    Handles message streaming, emotion detection, and conversation history.
+    
+    :param message: Incoming message from user
+    :type message: cl.Message
+    """
     update_activity()
 
     char = cl.user_session.get("char")
@@ -306,5 +357,10 @@ async def main(message: cl.Message):
 
 @cl.action_callback("heartbeat")
 async def heartbeat():
+    """Handle heartbeat action to maintain activity status.
+    
+    :return: Status string indicating active state
+    :rtype: str
+    """
     update_activity()
     return "Active"

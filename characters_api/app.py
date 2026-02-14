@@ -1,0 +1,196 @@
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from pathlib import Path
+import json
+import os
+from typing import Any
+
+app = FastAPI(title="cathyAI Characters API", version="1.0.0")
+
+# ---- Paths for your new repo layout ----
+# characters_api/app.py -> repo root is parent of characters_api/
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+CHAR_DIR = Path(os.getenv("CHAR_DIR", "/app/characters"))
+PROMPT_DIR = Path(os.getenv("PROMPT_DIR", str(CHAR_DIR / "system_prompt")))
+INFO_DIR = Path(os.getenv("INFO_DIR", str(CHAR_DIR / "character_info")))
+AVATAR_DIR = Path(os.getenv("AVATAR_DIR", "/app/public/avatars"))
+
+API_KEY = os.getenv("CHAR_API_KEY", "")
+HOST_URL = os.getenv("HOST_URL", "").rstrip("/")  # e.g. http://192.168.1.58:8090
+
+
+def require_auth(req: Request) -> None:
+    if not API_KEY:
+        return
+    if req.headers.get("x-api-key", "") != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def safe_filename(name: str) -> bool:
+    return bool(name) and "/" not in name and "\\" not in name and ".." not in name
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse {path.name}: {e}")
+
+
+def maybe_resolve_file(value: Any, directory: Path) -> str:
+    """
+    If value is a string and matches a file in directory, load it.
+    Otherwise treat it as inline text.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    candidate = directory / value.strip()
+    if candidate.exists() and candidate.is_file():
+        return candidate.read_text(encoding="utf-8").strip()
+    return value.strip()
+
+
+def dedupe_case_insensitive(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for s in items:
+        key = s.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(s)
+    return out
+
+
+def build_aliases(data: dict[str, Any], char_id: str) -> list[str]:
+    aliases: list[str] = []
+
+    for k in ("name", "nickname"):
+        v = data.get(k)
+        if isinstance(v, str) and v.strip():
+            aliases.append(v.strip())
+
+    # Optional list fields you might add later
+    for k in ("nicknames", "aliases"):
+        v = data.get(k)
+        if isinstance(v, list):
+            aliases.extend([x.strip() for x in v if isinstance(x, str) and x.strip()])
+
+    # Matrix-specific block
+    matrix = data.get("matrix")
+    if isinstance(matrix, dict):
+        v = matrix.get("aliases")
+        if isinstance(v, list):
+            aliases.extend([x.strip() for x in v if isinstance(x, str) and x.strip()])
+
+    # Always include the id
+    aliases.append(char_id)
+
+    return dedupe_case_insensitive(aliases)
+
+
+def attach_avatar_url(data: dict[str, Any]) -> None:
+    avatar = data.get("avatar")
+    if isinstance(avatar, str) and avatar.strip():
+        if HOST_URL:
+            data["avatar_url"] = f"{HOST_URL}/avatars/{avatar.strip()}"
+        else:
+            data["avatar_url"] = f"/avatars/{avatar.strip()}"
+    else:
+        data["avatar_url"] = None
+
+
+def resolve_character(data: dict[str, Any], char_id: str) -> dict[str, Any]:
+    # Resolve prompt + background
+    data["system_prompt"] = maybe_resolve_file(data.get("system_prompt"), PROMPT_DIR)
+    data["character_background"] = maybe_resolve_file(data.get("character_background"), INFO_DIR)
+
+    # Resolve matrix append rules (if present)
+    matrix = data.get("matrix")
+    if isinstance(matrix, dict):
+        append_rules = matrix.get("append_rules")
+        if isinstance(append_rules, str) and append_rules.strip():
+            matrix["append_rules_text"] = maybe_resolve_file(append_rules, PROMPT_DIR)
+        data["matrix"] = matrix
+
+    # Add computed aliases + avatar_url
+    data["aliases"] = build_aliases(data, char_id)
+    attach_avatar_url(data)
+
+    # Optional sanitization hook
+    data.pop("secrets", None)
+
+    return data
+
+
+@app.get("/health")
+def health():
+    return {
+        "ok": True,
+        "char_dir": str(CHAR_DIR),
+        "prompt_dir": str(PROMPT_DIR),
+        "info_dir": str(INFO_DIR),
+        "avatar_dir": str(AVATAR_DIR),
+    }
+
+
+@app.get("/characters")
+def list_characters(req: Request):
+    require_auth(req)
+
+    if not CHAR_DIR.exists():
+        raise HTTPException(500, f"Character directory not found: {CHAR_DIR}")
+
+    out: list[dict[str, Any]] = []
+    for f in sorted(CHAR_DIR.glob("*.json")):
+        char_id = f.stem
+        data = read_json(f)
+
+        # lightweight list view (no resolved full prompt needed, but we keep aliases + avatar_url)
+        item = {
+            "id": char_id,
+            "name": data.get("name") or char_id,
+            "nickname": data.get("nickname"),
+            "model": data.get("model"),
+            "greeting": data.get("greeting"),
+            "avatar": data.get("avatar"),
+        }
+        # include aliases and avatar_url for UX
+        item["aliases"] = build_aliases(data, char_id)
+
+        # avatar_url
+        avatar = data.get("avatar")
+        if isinstance(avatar, str) and avatar.strip():
+            item["avatar_url"] = f"{HOST_URL}/avatars/{avatar.strip()}" if HOST_URL else f"/avatars/{avatar.strip()}"
+        else:
+            item["avatar_url"] = None
+
+        out.append(item)
+
+    return {"characters": out}
+
+
+@app.get("/characters/{char_id}")
+def get_character(char_id: str, req: Request):
+    require_auth(req)
+
+    f = CHAR_DIR / f"{char_id}.json"
+    if not f.exists() or not f.is_file():
+        raise HTTPException(404, "Character not found")
+
+    data = read_json(f)
+    return resolve_character(data, char_id)
+
+
+@app.get("/avatars/{filename}")
+def get_avatar(filename: str, req: Request):
+    require_auth(req)
+
+    if not safe_filename(filename):
+        raise HTTPException(400, "Invalid filename")
+
+    p = AVATAR_DIR / filename
+    if not p.exists() or not p.is_file():
+        raise HTTPException(404, "Avatar not found")
+
+    return FileResponse(str(p))
