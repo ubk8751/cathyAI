@@ -153,7 +153,8 @@ async def detect_emotion(text):
 
 # Load characters dynamically with validation
 CHARACTERS = {}
-char_dir = Path("../characters")
+# Use container path if running in container, otherwise use relative path
+char_dir = Path("/app/characters") if Path("/app/characters").exists() else Path("../characters")
 if not char_dir.exists():
     logger.error("Characters directory not found")
 else:
@@ -171,7 +172,7 @@ else:
             
             # Load system prompt from external file if specified
             if "system_prompt" in char_data and not char_data["system_prompt"].startswith("You"):
-                prompt_path = Path("../characters/system_prompt") / char_data["system_prompt"]
+                prompt_path = char_dir / "system_prompt" / char_data["system_prompt"]
                 if prompt_path.exists():
                     char_data["system_prompt"] = prompt_path.read_text().strip()
                 else:
