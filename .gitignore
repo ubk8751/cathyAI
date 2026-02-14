@@ -4,3 +4,4 @@ venv
 **/.pytest_cache/
 =24.0
 .env
+.amazonq

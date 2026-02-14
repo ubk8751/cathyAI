@@ -21,6 +21,12 @@ HOST_URL = os.getenv("HOST_URL", "").rstrip("/")  # e.g. http://192.168.1.58:809
 
 
 def require_auth(req: Request) -> None:
+    """Validate API key authentication if configured.
+    
+    :param req: FastAPI request object containing headers
+    :type req: Request
+    :raises HTTPException: When API key is required but missing or invalid
+    """
     if not API_KEY:
         return
     if req.headers.get("x-api-key", "") != API_KEY:
@@ -28,10 +34,25 @@ def require_auth(req: Request) -> None:
 
 
 def safe_filename(name: str) -> bool:
+    """Check if filename is safe for file system access.
+    
+    :param name: Filename to validate
+    :type name: str
+    :return: True if filename is safe, False otherwise
+    :rtype: bool
+    """
     return bool(name) and "/" not in name and "\\" not in name and ".." not in name
 
 
 def read_json(path: Path) -> dict[str, Any]:
+    """Read and parse JSON file.
+    
+    :param path: Path to JSON file
+    :type path: Path
+    :return: Parsed JSON data
+    :rtype: dict[str, Any]
+    :raises HTTPException: When file cannot be read or parsed
+    """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
@@ -39,9 +60,17 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def maybe_resolve_file(value: Any, directory: Path) -> str:
-    """
+    """Resolve file content or return inline text.
+    
     If value is a string and matches a file in directory, load it.
     Otherwise treat it as inline text.
+    
+    :param value: File path or inline text content
+    :type value: Any
+    :param directory: Directory to search for files
+    :type directory: Path
+    :return: File content or original value as string
+    :rtype: str
     """
     if not isinstance(value, str) or not value.strip():
         return ""
@@ -52,6 +81,13 @@ def maybe_resolve_file(value: Any, directory: Path) -> str:
 
 
 def dedupe_case_insensitive(items: list[str]) -> list[str]:
+    """Remove case-insensitive duplicates from string list.
+    
+    :param items: List of strings to deduplicate
+    :type items: list[str]
+    :return: List with duplicates removed (case-insensitive)
+    :rtype: list[str]
+    """
     seen: set[str] = set()
     out: list[str] = []
     for s in items:
@@ -63,6 +99,15 @@ def dedupe_case_insensitive(items: list[str]) -> list[str]:
 
 
 def build_aliases(data: dict[str, Any], char_id: str) -> list[str]:
+    """Build list of character aliases from character data.
+    
+    :param data: Character configuration data
+    :type data: dict[str, Any]
+    :param char_id: Character identifier
+    :type char_id: str
+    :return: List of character aliases
+    :rtype: list[str]
+    """
     aliases: list[str] = []
 
     for k in ("name", "nickname"):
@@ -90,6 +135,11 @@ def build_aliases(data: dict[str, Any], char_id: str) -> list[str]:
 
 
 def attach_avatar_url(data: dict[str, Any]) -> None:
+    """Add avatar_url field to character data.
+    
+    :param data: Character data dictionary to modify
+    :type data: dict[str, Any]
+    """
     avatar = data.get("avatar")
     if isinstance(avatar, str) and avatar.strip():
         if HOST_URL:
@@ -101,6 +151,15 @@ def attach_avatar_url(data: dict[str, Any]) -> None:
 
 
 def resolve_character(data: dict[str, Any], char_id: str) -> dict[str, Any]:
+    """Resolve character data with file content and computed fields.
+    
+    :param data: Raw character configuration data
+    :type data: dict[str, Any]
+    :param char_id: Character identifier
+    :type char_id: str
+    :return: Resolved character data with file content loaded
+    :rtype: dict[str, Any]
+    """
     # Resolve prompt + background
     data["system_prompt"] = maybe_resolve_file(data.get("system_prompt"), PROMPT_DIR)
     data["character_background"] = maybe_resolve_file(data.get("character_background"), INFO_DIR)
@@ -125,6 +184,11 @@ def resolve_character(data: dict[str, Any], char_id: str) -> dict[str, Any]:
 
 @app.get("/health")
 def health():
+    """Health check endpoint.
+    
+    :return: Health status and configuration paths
+    :rtype: dict[str, Any]
+    """
     return {
         "ok": True,
         "char_dir": str(CHAR_DIR),
@@ -136,6 +200,14 @@ def health():
 
 @app.get("/characters")
 def list_characters(req: Request):
+    """List all available characters.
+    
+    :param req: FastAPI request object
+    :type req: Request
+    :return: Dictionary containing list of characters
+    :rtype: dict[str, Any]
+    :raises HTTPException: When authentication fails or character directory not found
+    """
     require_auth(req)
 
     if not CHAR_DIR.exists():
@@ -172,6 +244,16 @@ def list_characters(req: Request):
 
 @app.get("/characters/{char_id}")
 def get_character(char_id: str, req: Request):
+    """Get detailed character information.
+    
+    :param char_id: Character identifier
+    :type char_id: str
+    :param req: FastAPI request object
+    :type req: Request
+    :return: Resolved character data
+    :rtype: dict[str, Any]
+    :raises HTTPException: When authentication fails or character not found
+    """
     require_auth(req)
 
     f = CHAR_DIR / f"{char_id}.json"
@@ -184,6 +266,16 @@ def get_character(char_id: str, req: Request):
 
 @app.get("/avatars/{filename}")
 def get_avatar(filename: str, req: Request):
+    """Serve character avatar image.
+    
+    :param filename: Avatar filename
+    :type filename: str
+    :param req: FastAPI request object
+    :type req: Request
+    :return: Avatar image file response
+    :rtype: FileResponse
+    :raises HTTPException: When authentication fails, filename invalid, or file not found
+    """
     require_auth(req)
 
     if not safe_filename(filename):
