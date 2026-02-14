@@ -91,7 +91,7 @@ class TestSharedResources:
         watchdog = REPO_ROOT / "watchdog.sh"
         assert watchdog.exists(), "watchdog.sh not found"
         content = watchdog.read_text()
-        assert "last_activity" in content, "watchdog.sh missing last_activity reference"
+        assert "activity.last" in content, "watchdog.sh missing activity.last reference"
         assert "docker compose down" in content, "watchdog.sh missing docker compose down command"
         assert "#!/bin/bash" in content, "watchdog.sh missing shebang"
 
@@ -176,7 +176,7 @@ class TestSharedResources:
         api_content = api_compose.read_text()
         
         # Both should mount activity tracking
-        assert "/tmp/last_activity:/tmp/last_activity" in webbui_content, "webbui_chat missing activity volume"
+        assert "/tmp/activity.last:/tmp/activity.last" in webbui_content, "webbui_chat missing activity volume"
         
         # Both should mount shared directories
         assert "../characters:" in webbui_content, "webbui_chat missing characters volume"
