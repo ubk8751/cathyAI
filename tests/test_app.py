@@ -182,7 +182,4 @@ class TestSharedResources:
         assert "../characters:" in webbui_content, "webbui_chat missing characters volume"
         assert "../public:" in webbui_content, "webbui_chat missing public volume"
         assert "../characters:" in api_content, "characters_api missing characters volume"
-        assert "../public:" in api_content, "characters_api missing public volume" webbui_content, "webbui_chat missing characters volume"
-        assert "../public:" in webbui_content, "webbui_chat missing public volume"
-        assert "../characters:" in api_content, "characters_api missing characters volume"
         assert "../public:" in api_content, "characters_api missing public volume"
