@@ -189,11 +189,11 @@ if not CHARACTERS:
 def update_activity():
     """Update activity timestamp for watchdog monitoring.
     
-    Writes current Unix timestamp to /tmp/last_activity for container
+    Writes current Unix timestamp to /tmp/activity.last for container
     shutdown monitoring by watchdog.sh script.
     """
     try:
-        Path("/tmp/last_activity").write_text(str(int(time.time())))
+        Path("/tmp/activity.last").write_text(str(int(time.time())))
     except Exception as e:
         logger.error(f"Failed to update activity timestamp: {e}")
 

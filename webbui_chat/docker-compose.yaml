@@ -7,7 +7,9 @@ services:
     volumes:
       - ../characters:/app/characters
       - ../public:/app/public
-      - /tmp/last_activity:/tmp/last_activity
+      - /tmp/activity.last:/tmp/activity.last
     env_file:
       - .env
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

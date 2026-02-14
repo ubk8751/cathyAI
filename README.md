@@ -272,7 +272,7 @@ Full container shutdown after 5 min inactivity:
 * * * * * /opt/cathyAI/watchdog.sh
 ```
 
-The watchdog script monitors `/tmp/last_activity` and shuts down containers when inactive.
+The watchdog script monitors `/tmp/activity.last` and shuts down containers when inactive.
 
 ---
 
