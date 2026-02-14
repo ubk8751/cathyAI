@@ -8,9 +8,14 @@ jobs:
     container: debian:bookworm-slim
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update && apt-get install -y python3-pip
-      - run: pip install -r requirements.txt pytest --break-system-packages
-      - run: pytest
+      - run: apt-get update && apt-get install -y python3-pip python3-venv
+      - run: python3 -m venv venv
+      - run: |
+          . venv/bin/activate
+          pip install pytest fastapi httpx python-dotenv
+      - run: |
+          . venv/bin/activate
+          pytest tests/ -v
   merge:
     needs: test
     runs-on: ubuntu-latest
