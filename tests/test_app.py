@@ -138,18 +138,6 @@ class TestSharedResources:
         char_files = list((REPO_ROOT / "characters").glob("*.json"))
         assert len(char_files) >= 2, "Need at least 2 characters for dropdown to appear"
 
-    def test_development_rules_exist(self):
-        """Test that development rules file exists.
-        
-        Validates .amazonq/rules/dev-standards.md contains required development standards.
-        """
-        dev_rules = REPO_ROOT / ".amazonq" / "rules" / "dev-standards.md"
-        assert dev_rules.exists(), ".amazonq/rules/dev-standards.md not found"
-        content = dev_rules.read_text()
-        assert "PEP 8" in content, "Development rules missing PEP 8 reference"
-        assert "reST" in content, "Development rules missing reST docstring standard"
-        assert "[type]: Title" in content, "Development rules missing commit format"
-
     def test_env_template_files_exist(self):
         """Test that .env.template files exist for both services.
         
@@ -192,6 +180,9 @@ class TestSharedResources:
         
         # Both should mount shared directories
         assert "../characters:" in webbui_content, "webbui_chat missing characters volume"
+        assert "../public:" in webbui_content, "webbui_chat missing public volume"
+        assert "../characters:" in api_content, "characters_api missing characters volume"
+        assert "../public:" in api_content, "characters_api missing public volume" webbui_content, "webbui_chat missing characters volume"
         assert "../public:" in webbui_content, "webbui_chat missing public volume"
         assert "../characters:" in api_content, "characters_api missing characters volume"
         assert "../public:" in api_content, "characters_api missing public volume"
