@@ -72,14 +72,14 @@ class TestCharactersAPI:
             assert isinstance(char["aliases"], list)
 
     def test_get_character_by_id(self):
-        """Test retrieving specific character by ID."""
+        """Test retrieving character with default private view."""
         response = self.client.get("/characters/catherine")
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Catherine Ploskaya"
-        assert "system_prompt" in data
-        assert len(data["system_prompt"]) > 50
-        assert "aliases" in data
+        assert "prompts" in data, "Default should be private view"
+        assert "system" in data["prompts"]
+        assert len(data["prompts"]["system"]) > 50
         assert "catherine" in [a.lower() for a in data["aliases"]]
 
     def test_get_nonexistent_character(self):
@@ -88,22 +88,22 @@ class TestCharactersAPI:
         assert response.status_code == 404
 
     def test_system_prompt_resolution(self):
-        """Test that system prompts are resolved from files."""
+        """Test that system prompts are resolved from external files."""
         response = self.client.get("/characters/catherine")
         assert response.status_code == 200
         data = response.json()
-        prompt = data["system_prompt"]
-        assert prompt.startswith("You")
-        assert len(prompt) > 100
+        assert data["prompts"]["system"].startswith("You")
+        assert len(data["prompts"]["system"]) > 100
+        assert data["system_prompt"] == data["prompts"]["system"], "Backward compat field should match"
 
     def test_character_aliases(self):
-        """Test that character aliases are built correctly."""
+        """Test that character aliases include name, nickname, and ID."""
         response = self.client.get("/characters/catherine")
         assert response.status_code == 200
         data = response.json()
         aliases = [a.lower() for a in data["aliases"]]
-        assert "catherine" in aliases
-        assert "catherine ploskaya" in aliases
+        assert "catherine" in aliases, "Should include ID"
+        assert "catherine ploskaya" in aliases, "Should include full name"
 
     def test_docker_files_exist(self):
         """Test that Docker configuration files exist."""
@@ -149,3 +149,55 @@ class TestCharactersAPI:
         assert "def health" in content, "app.py missing health function"
         assert "def list_characters" in content, "app.py missing list_characters function"
         assert "def get_character" in content, "app.py missing get_character function"
+
+    def test_public_view_excludes_prompts(self):
+        """Test that public view excludes all prompt text for security."""
+        response = self.client.get("/characters/catherine?view=public")
+        assert response.status_code == 200
+        data = response.json()
+        assert "system_prompt" not in data
+        assert "character_background" not in data
+        assert "prompts" not in data
+        assert "name" in data
+        assert "avatar_url" in data
+        assert "aliases" in data
+
+    def test_private_view_normalized_prompts(self):
+        """Test that private view includes normalized prompts bundle."""
+        response = self.client.get("/characters/catherine?view=private")
+        assert response.status_code == 200
+        data = response.json()
+        prompts = data["prompts"]
+        assert isinstance(prompts, dict)
+        assert "system" in prompts
+        assert "background" in prompts
+        assert isinstance(prompts["system"], str)
+        assert len(prompts["system"]) > 50
+        assert data["system_prompt"] == prompts["system"], "Backward compat"
+
+
+
+    def test_etag_caching_workflow(self):
+        """Test complete ETag caching workflow with 304 response."""
+        response1 = self.client.get("/characters/catherine")
+        assert response1.status_code == 200
+        assert "etag" in response1.headers
+        etag = response1.headers["etag"]
+        assert etag.startswith('"') and etag.endswith('"')
+        
+        response2 = self.client.get("/characters/catherine", headers={"If-None-Match": etag})
+        assert response2.status_code == 304
+
+    def test_etag_on_all_endpoints(self):
+        """Test that all endpoints support ETag caching."""
+        endpoints = [
+            "/characters",
+            "/characters/catherine",
+            "/avatars/catherine_pfp.jpg"
+        ]
+        for endpoint in endpoints:
+            response = self.client.get(endpoint)
+            if response.status_code == 200:
+                assert "etag" in response.headers, f"{endpoint} missing ETag"
+
+

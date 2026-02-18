@@ -9,7 +9,7 @@ cathyAI consists of two independent services:
 - **webbui_chat** - Chainlit-based chat UI (port 8000)
 - **characters_api** - FastAPI character data service (port 8090)
 
-Both services share character configurations and avatars from the root `characters/` and `public/` directories.
+The webbui_chat service fetches character data from characters_api, with local caching for resilience.
 
 ## Features
 
@@ -108,6 +108,10 @@ Access at http://localhost:8000
 CHAT_API_URL=http://your-api:11434/api/chat
 MODELS_API_URL=http://your-api:11434/api/tags
 
+# Required: Character API
+CHAR_API_URL=http://your-api:8090
+CHAR_API_KEY=your_key_here
+
 # Optional: Emotion detection
 EMOTION_ENABLED=0
 EMOTION_API_URL=http://your-api:8001/emotion
@@ -151,12 +155,13 @@ EMOTION_TIMEOUT=10
 
 ### Features
 
-- Character profile dropdown with avatars
+- Character profile dropdown with avatars (loaded from API)
 - Live model switching via sidebar
 - Streaming chat responses
 - Optional emotion detection
 - Session-based conversation history
 - Activity tracking for watchdog
+- Local character caching for offline resilience
 
 ---
 
@@ -283,9 +288,9 @@ pytest tests/test_app.py::test_character_json_structure
 ```
 
 Test coverage:
-- **test_app.py** - Shared resources (characters, avatars, scripts)
-- **test_webbui_chat.py** - Chat UI (Docker, imports, character loading)
-- **test_characters_api.py** - API endpoints (health, characters, avatars)
+- **test_app.py** (11 tests) - Shared resources (characters, avatars, scripts)
+- **test_webbui_chat.py** (10 tests) - Chat UI (Docker, imports, API integration)
+- **test_characters_api.py** (16 tests) - API endpoints (public/private views, ETag caching, prompts)
 
 ---
 
