@@ -79,11 +79,12 @@ class TestWebbuiChat:
 
     def test_env_template_exists(self):
         """Test that .env.template exists with required variables."""
-        env_template = REPO_ROOT / ".env.template"
-        assert env_template.exists(), ".env.template not found"
+        env_template = REPO_ROOT / "webbui_chat" / ".env.template"
+        assert env_template.exists(), "webbui_chat/.env.template not found"
         content = env_template.read_text()
         assert "CHAT_API_URL" in content, ".env.template missing CHAT_API_URL"
         assert "MODELS_API_URL" in content, ".env.template missing MODELS_API_URL"
+        assert "CHAR_API_URL" in content, ".env.template missing CHAR_API_URL"
 
     def test_app_imports(self):
         """Test that app.py can be imported without errors."""
@@ -92,7 +93,6 @@ class TestWebbuiChat:
         assert hasattr(self.app, 'update_settings'), "app.py missing update_settings function"
         assert hasattr(self.app, 'CHAR_LIST'), "app.py missing CHAR_LIST"
         assert hasattr(self.app, 'CHAR_INDEX'), "app.py missing CHAR_INDEX"
-        assert hasattr(self.app, 'CHAR_LIST_ETAG'), "app.py missing CHAR_LIST_ETAG"
         assert hasattr(self.app, 'CHAR_PRIVATE_ETAGS'), "app.py missing CHAR_PRIVATE_ETAGS"
         assert hasattr(self.app, 'PROFILE_NAME_TO_ID'), "app.py missing PROFILE_NAME_TO_ID"
         assert hasattr(self.app, 'chat_profiles'), "app.py missing chat_profiles function"
@@ -102,6 +102,8 @@ class TestWebbuiChat:
         assert hasattr(self.app, 'detect_emotion'), "app.py missing detect_emotion function"
         assert hasattr(self.app, 'fetch_characters_list'), "app.py missing fetch_characters_list function"
         assert hasattr(self.app, 'fetch_character_private'), "app.py missing fetch_character_private function"
+        assert hasattr(self.app, 'load_cached_etag'), "app.py missing load_cached_etag function"
+        assert hasattr(self.app, 'save_cached_etag'), "app.py missing save_cached_etag function"
 
     def test_character_loading_logic(self):
         """Test character API integration functions exist."""
