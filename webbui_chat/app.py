@@ -23,16 +23,69 @@ logger = logging.getLogger(__name__)
 CHAT_API_URL = os.getenv("CHAT_API_URL")
 MODELS_API_URL = os.getenv("MODELS_API_URL")
 EMOTION_API_URL = os.getenv("EMOTION_API_URL")
+CHAR_API_URL = os.getenv("CHAR_API_URL", "").rstrip("/")
 CHAT_API_KEY = os.getenv("CHAT_API_KEY")
 MODELS_API_KEY = os.getenv("MODELS_API_KEY")
 EMOTION_API_KEY = os.getenv("EMOTION_API_KEY")
+CHAR_API_KEY = os.getenv("CHAR_API_KEY")
 CHAT_TIMEOUT = int(float(os.getenv("CHAT_TIMEOUT", "120")))
 MODELS_TIMEOUT = int(float(os.getenv("MODELS_TIMEOUT", "10")))
 EMOTION_TIMEOUT = int(float(os.getenv("EMOTION_TIMEOUT", "10")))
 EMOTION_ENABLED = os.getenv("EMOTION_ENABLED", "0") == "1"
+CHAR_CACHE_PATH = Path("/tmp/characters_cache.json")
 
 # HTTP client
 client = httpx.AsyncClient()
+
+def char_headers():
+    """Generate headers for character API requests.
+    
+    :return: Dictionary with API key header if configured
+    :rtype: dict
+    """
+    return {"x-api-key": CHAR_API_KEY} if CHAR_API_KEY else {}
+
+async def fetch_characters_list():
+    """Fetch character list from API with caching.
+    
+    :return: List of character dictionaries from API
+    :rtype: list[dict]
+    :raises Exception: If API is not configured or request fails
+    """
+    if not CHAR_API_URL:
+        raise Exception("CHAR_API_URL not configured")
+    url = f"{CHAR_API_URL}/characters"
+    resp = await client.get(url, headers=char_headers(), timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    chars = data.get("characters", [])
+    CHAR_CACHE_PATH.write_text(json.dumps(chars), encoding="utf-8")
+    logger.info(f"Fetched {len(chars)} characters from API")
+    return chars
+
+def load_cached_characters():
+    """Load characters from local cache file.
+    
+    :return: List of cached character dictionaries
+    :rtype: list[dict]
+    """
+    if CHAR_CACHE_PATH.exists():
+        return json.loads(CHAR_CACHE_PATH.read_text(encoding="utf-8"))
+    return []
+
+async def fetch_character_private(char_id: str):
+    """Fetch full character data with prompts from API.
+    
+    :param char_id: Character identifier
+    :type char_id: str
+    :return: Character data with resolved prompts
+    :rtype: dict
+    :raises Exception: If API request fails
+    """
+    url = f"{CHAR_API_URL}/characters/{char_id}?view=private"
+    resp = await client.get(url, headers=char_headers(), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
 
 async def fetch_models():
     """Fetch available models from external API.
@@ -151,41 +204,9 @@ async def detect_emotion(text):
         logger.warning(f"Emotion detection failed: {e}")
         return None
 
-# Load characters dynamically with validation
-CHARACTERS = {}
-# Use container path if running in container, otherwise use relative path
-char_dir = Path("/app/characters") if Path("/app/characters").exists() else Path("../characters")
-if not char_dir.exists():
-    logger.error("Characters directory not found")
-else:
-    for f in char_dir.glob("*.json"):
-        try:
-            with open(f, 'r') as file:
-                char_data = json.load(file)
-            
-            # Validate required fields
-            required_fields = ["name", "avatar", "model", "system_prompt", "greeting"]
-            missing = [field for field in required_fields if field not in char_data]
-            if missing:
-                logger.error(f"Character {f.name} missing fields: {missing}")
-                continue
-            
-            # Load system prompt from external file if specified
-            if "system_prompt" in char_data and not char_data["system_prompt"].startswith("You"):
-                prompt_path = char_dir / "system_prompt" / char_data["system_prompt"]
-                if prompt_path.exists():
-                    char_data["system_prompt"] = prompt_path.read_text().strip()
-                else:
-                    logger.error(f"System prompt file not found: {prompt_path}")
-                    continue
-            
-            CHARACTERS[f.stem] = char_data
-            logger.info(f"Loaded character: {char_data['name']}")
-        except Exception as e:
-            logger.error(f"Failed to load character {f.name}: {e}")
-
-if not CHARACTERS:
-    logger.error("No characters loaded! App may not function correctly.")
+# Load characters from API or cache
+CHAR_INDEX = {}
+CHAR_LIST = []
 
 def update_activity():
     """Update activity timestamp for watchdog monitoring.
@@ -202,28 +223,38 @@ update_activity()
 
 @cl.set_chat_profiles
 async def chat_profiles():
-    """Define available chat profiles from loaded characters.
+    """Define available chat profiles from character API.
     
     :return: List of ChatProfile objects for character selection
     :rtype: list[cl.ChatProfile]
     """
-    if not CHARACTERS:
-        logger.warning("No characters available for profiles")
+    global CHAR_INDEX, CHAR_LIST
+    
+    try:
+        CHAR_LIST = await fetch_characters_list()
+    except Exception as e:
+        logger.warning(f"Failed to fetch characters from API: {e}, using cache")
+        CHAR_LIST = load_cached_characters()
+    
+    if not CHAR_LIST:
+        logger.error("No characters available")
         return []
     
+    CHAR_INDEX = {char["id"]: char for char in CHAR_LIST}
+    
     profiles = []
-    for char_id, char in CHARACTERS.items():
+    for char in CHAR_LIST:
         try:
             profiles.append(
                 cl.ChatProfile(
                     name=char["name"],
-                    icon=f"/public/avatars/{char['avatar']}",
+                    icon=char.get("avatar_url", f"/public/avatars/{char.get('avatar', '')}"),
                     markdown_description=char.get("description", ""),
                     starters=[cl.Starter(label="Greet me", message=char.get("greeting", "Hello there!"))]
                 )
             )
         except Exception as e:
-            logger.error(f"Failed to create profile for {char_id}: {e}")
+            logger.error(f"Failed to create profile for {char.get('id')}: {e}")
     return profiles
 
 @cl.on_chat_start
@@ -235,21 +266,27 @@ async def start():
     """
     update_activity()
 
-    if not CHARACTERS:
+    if not CHAR_LIST:
         await cl.Message(content="⚠️ No characters loaded. Please check configuration.").send()
         return
 
-    # Get current profile (set by Chainlit)
     current_profile_name = cl.user_session.get("chat_profile")
-    char = next((c for c in CHARACTERS.values() if c["name"] == current_profile_name), None)
+    char_summary = next((c for c in CHAR_LIST if c["name"] == current_profile_name), None)
     
-    # Fallback to first character if profile not found
-    if not char:
-        char = list(CHARACTERS.values())[0]
-        logger.warning(f"Profile '{current_profile_name}' not found, using {char['name']}")
+    if not char_summary:
+        char_summary = CHAR_LIST[0]
+        logger.warning(f"Profile '{current_profile_name}' not found, using {char_summary['name']}")
+
+    try:
+        char = await fetch_character_private(char_summary["id"])
+        logger.info(f"Fetched full character data for: {char['name']}")
+    except Exception as e:
+        logger.error(f"Failed to fetch character details: {e}")
+        await cl.Message(content="⚠️ Failed to load character. Please try again.").send()
+        return
 
     cl.user_session.set("char", char)
-    cl.user_session.set("history", [{"role": "system", "content": char["system_prompt"]}])
+    cl.user_session.set("history", [{"role": "system", "content": char["prompts"]["system"]}])
     logger.info(f"Chat started with character: {char['name']}")
 
     # Model selection sidebar with error handling
@@ -312,7 +349,6 @@ async def main(message: cl.Message):
         await cl.Message(content="⚠️ No character selected. Please restart the chat.").send()
         return
 
-    # Check if models are available
     model_available = cl.user_session.get("model_available", False)
     if not model_available:
         author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
@@ -323,7 +359,7 @@ async def main(message: cl.Message):
     default_model = cl.user_session.get("default_model")
     selected_model = settings.get("Model", default_model)
 
-    history = cl.user_session.get("history", [{"role": "system", "content": char["system_prompt"]}])
+    history = cl.user_session.get("history", [{"role": "system", "content": char["prompts"]["system"]}])
     history.append({"role": "user", "content": message.content})
 
     author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
