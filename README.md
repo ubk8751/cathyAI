@@ -218,12 +218,33 @@ HOST_URL=http://192.168.1.58:8090
 }
 ```
 
-**GET /characters/{char_id}** - Get character details
+**GET /characters/{char_id}?view=public|private** - Get character details
+
+Public view (safe for web UI, no prompt text):
+```json
+{
+  "id": "[character_name]",
+  "name": "[full_character_name]",
+  "nickname": null|"[nickname]",
+  "model": "llama3.1:8b",
+  "greeting": "Hello!",
+  "avatar": "[id]_pfp.jpg",
+  "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
+  "aliases": [full_list_of_names]
+}
+```
+
+Private view (default, includes resolved prompts):
 ```json
 {
   "name": "[full_character_name]",
   "system_prompt": "You are [character]...",
   "character_background": "[character] is...",
+  "prompts": {
+    "system": "You are [character]...",
+    "background": "[character] is...",
+    "matrix_append_rules": "..."
+  },
   "aliases": [full_list_of_names],
   "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
   ...
@@ -234,11 +255,16 @@ HOST_URL=http://192.168.1.58:8090
 
 ### Features
 
+- **Public/Private Views** - Separate data exposure for web UI vs AI services
+- **ETag Caching** - HTTP 304 responses for unchanged resources (~95% bandwidth savings)
+- **Normalized Prompts** - Consistent `prompts.*` structure for AI consumption
 - Automatic system prompt file resolution
 - Character alias generation (name, nickname, ID)
 - Avatar URL generation
 - Optional API key authentication
 - Matrix-specific field support
+
+See [characters_api/API_ENHANCEMENTS.md](characters_api/API_ENHANCEMENTS.md) for detailed documentation on new features.
 
 ---
 
