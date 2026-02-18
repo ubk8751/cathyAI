@@ -33,6 +33,7 @@ MODELS_TIMEOUT = int(float(os.getenv("MODELS_TIMEOUT", "10")))
 EMOTION_TIMEOUT = int(float(os.getenv("EMOTION_TIMEOUT", "10")))
 EMOTION_ENABLED = os.getenv("EMOTION_ENABLED", "0") == "1"
 CHAR_CACHE_PATH = Path("/tmp/characters_cache.json")
+CHAR_CACHE_ETAG_PATH = Path("/tmp/characters_cache.etag")
 
 # HTTP client
 client = httpx.AsyncClient()
@@ -52,26 +53,30 @@ async def fetch_characters_list():
     :rtype: list[dict]
     :raises Exception: If API is not configured or request fails
     """
-    global CHAR_LIST_ETAG
     if not CHAR_API_URL:
         raise Exception("CHAR_API_URL not configured")
 
     url = f"{CHAR_API_URL}/characters"
     headers = char_headers()
-    if CHAR_LIST_ETAG:
-        headers["If-None-Match"] = CHAR_LIST_ETAG
+    etag = load_cached_etag()
+    if etag:
+        headers["If-None-Match"] = etag
 
     resp = await client.get(url, headers=headers, timeout=10)
+
     if resp.status_code == 304:
-        logger.info("Characters list not modified (ETag cache hit)")
+        logger.info("Characters list unchanged (304); using cache")
         return load_cached_characters()
 
     resp.raise_for_status()
-    CHAR_LIST_ETAG = resp.headers.get("etag")
+
+    new_etag = resp.headers.get("etag", "")
+    save_cached_etag(new_etag)
+
     data = resp.json()
     chars = data.get("characters", [])
     CHAR_CACHE_PATH.write_text(json.dumps(chars), encoding="utf-8")
-    logger.info(f"Fetched {len(chars)} characters from API")
+    logger.info(f"Fetched {len(chars)} characters from API (etag={new_etag})")
     return chars
 
 def load_cached_characters():
@@ -83,6 +88,23 @@ def load_cached_characters():
     if CHAR_CACHE_PATH.exists():
         return json.loads(CHAR_CACHE_PATH.read_text(encoding="utf-8"))
     return []
+
+def load_cached_etag():
+    """Load cached ETag from file.
+    
+    :return: Cached ETag string or empty string
+    :rtype: str
+    """
+    return CHAR_CACHE_ETAG_PATH.read_text(encoding="utf-8").strip() if CHAR_CACHE_ETAG_PATH.exists() else ""
+
+def save_cached_etag(etag: str):
+    """Save ETag to cache file.
+    
+    :param etag: ETag value to cache
+    :type etag: str
+    """
+    if etag:
+        CHAR_CACHE_ETAG_PATH.write_text(etag.strip(), encoding="utf-8")
 
 async def fetch_character_private(char_id: str):
     """Fetch full character data with prompts from API with ETag caching.
@@ -231,7 +253,6 @@ async def detect_emotion(text):
 # Load characters from API or cache
 CHAR_INDEX = {}
 CHAR_LIST = []
-CHAR_LIST_ETAG = None
 CHAR_PRIVATE_ETAGS = {}
 PROFILE_NAME_TO_ID = {}
 

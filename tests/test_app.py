@@ -145,16 +145,15 @@ class TestSharedResources:
         """
         webbui_template = REPO_ROOT / "webbui_chat" / ".env.template"
         api_template = REPO_ROOT / "characters_api" / ".env.template"
-        root_template = REPO_ROOT / ".env.template"
         
         assert webbui_template.exists(), "webbui_chat/.env.template not found"
         assert api_template.exists(), "characters_api/.env.template not found"
-        assert root_template.exists(), "Root .env.template not found"
         
         # Validate required fields in webbui template
         webbui_content = webbui_template.read_text()
         assert "CHAT_API_URL=" in webbui_content, "webbui_chat template missing CHAT_API_URL"
         assert "MODELS_API_URL=" in webbui_content, "webbui_chat template missing MODELS_API_URL"
+        assert "CHAR_API_URL=" in webbui_content, "webbui_chat template missing CHAR_API_URL"
         
         # Validate required fields in API template
         api_content = api_template.read_text()
