@@ -256,7 +256,7 @@ Private view (default, includes resolved prompts):
 }
 ```
 
-**GET /avatars/{filename}** - Serve avatar image
+**GET /avatars/{filename}** - Serve avatar image (public, no auth required)
 
 ### Features
 

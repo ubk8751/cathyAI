@@ -388,7 +388,7 @@ def get_character(
 
 @app.get("/avatars/{filename}")
 def get_avatar(filename: str, req: Request, response: Response):
-    """Serve character avatar image.
+    """Serve character avatar image (public endpoint).
     
     :param filename: Avatar filename
     :type filename: str
@@ -398,10 +398,8 @@ def get_avatar(filename: str, req: Request, response: Response):
     :type response: Response
     :return: Avatar image file response
     :rtype: FileResponse
-    :raises HTTPException: When authentication fails, filename invalid, or file not found
+    :raises HTTPException: When filename invalid or file not found
     """
-    require_auth(req)
-
     if not safe_filename(filename):
         raise HTTPException(400, "Invalid filename")
 
