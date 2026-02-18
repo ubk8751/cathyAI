@@ -46,17 +46,28 @@ def char_headers():
     return {"x-api-key": CHAR_API_KEY} if CHAR_API_KEY else {}
 
 async def fetch_characters_list():
-    """Fetch character list from API with caching.
+    """Fetch character list from API with ETag caching.
     
     :return: List of character dictionaries from API
     :rtype: list[dict]
     :raises Exception: If API is not configured or request fails
     """
+    global CHAR_LIST_ETAG
     if not CHAR_API_URL:
         raise Exception("CHAR_API_URL not configured")
+
     url = f"{CHAR_API_URL}/characters"
-    resp = await client.get(url, headers=char_headers(), timeout=10)
+    headers = char_headers()
+    if CHAR_LIST_ETAG:
+        headers["If-None-Match"] = CHAR_LIST_ETAG
+
+    resp = await client.get(url, headers=headers, timeout=10)
+    if resp.status_code == 304:
+        logger.info("Characters list not modified (ETag cache hit)")
+        return load_cached_characters()
+
     resp.raise_for_status()
+    CHAR_LIST_ETAG = resp.headers.get("etag")
     data = resp.json()
     chars = data.get("characters", [])
     CHAR_CACHE_PATH.write_text(json.dumps(chars), encoding="utf-8")
@@ -74,7 +85,7 @@ def load_cached_characters():
     return []
 
 async def fetch_character_private(char_id: str):
-    """Fetch full character data with prompts from API.
+    """Fetch full character data with prompts from API with ETag caching.
     
     :param char_id: Character identifier
     :type char_id: str
@@ -82,9 +93,22 @@ async def fetch_character_private(char_id: str):
     :rtype: dict
     :raises Exception: If API request fails
     """
+    global CHAR_PRIVATE_ETAGS
     url = f"{CHAR_API_URL}/characters/{char_id}?view=private"
-    resp = await client.get(url, headers=char_headers(), timeout=10)
+    headers = char_headers()
+    etag = CHAR_PRIVATE_ETAGS.get(char_id)
+    if etag:
+        headers["If-None-Match"] = etag
+
+    resp = await client.get(url, headers=headers, timeout=10)
+    if resp.status_code == 304:
+        logger.info(f"Character {char_id} not modified (ETag cache hit)")
+        resp = await client.get(url, headers=char_headers(), timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
     resp.raise_for_status()
+    CHAR_PRIVATE_ETAGS[char_id] = resp.headers.get("etag")
     return resp.json()
 
 async def fetch_models():
@@ -207,6 +231,15 @@ async def detect_emotion(text):
 # Load characters from API or cache
 CHAR_INDEX = {}
 CHAR_LIST = []
+CHAR_LIST_ETAG = None
+CHAR_PRIVATE_ETAGS = {}
+PROFILE_NAME_TO_ID = {}
+
+# Validate configuration
+if not CHAR_API_URL:
+    logger.warning("CHAR_API_URL not configured")
+if not CHAR_API_KEY:
+    logger.warning("CHAR_API_KEY not configured (character-api may reject requests)")
 
 def update_activity():
     """Update activity timestamp for watchdog monitoring.
@@ -228,7 +261,7 @@ async def chat_profiles():
     :return: List of ChatProfile objects for character selection
     :rtype: list[cl.ChatProfile]
     """
-    global CHAR_INDEX, CHAR_LIST
+    global CHAR_INDEX, CHAR_LIST, PROFILE_NAME_TO_ID
     
     try:
         CHAR_LIST = await fetch_characters_list()
@@ -241,14 +274,16 @@ async def chat_profiles():
         return []
     
     CHAR_INDEX = {char["id"]: char for char in CHAR_LIST}
+    PROFILE_NAME_TO_ID = {char["name"]: char["id"] for char in CHAR_LIST if "name" in char and "id" in char}
     
     profiles = []
     for char in CHAR_LIST:
         try:
+            icon = char.get("avatar_url") or f"{CHAR_API_URL}/avatars/{char.get('avatar', '')}" if CHAR_API_URL else ""
             profiles.append(
                 cl.ChatProfile(
                     name=char["name"],
-                    icon=char.get("avatar_url", f"/public/avatars/{char.get('avatar', '')}"),
+                    icon=icon,
                     markdown_description=char.get("description", ""),
                     starters=[cl.Starter(label="Greet me", message=char.get("greeting", "Hello there!"))]
                 )
@@ -264,21 +299,31 @@ async def start():
     Sets up user session with character data, conversation history,
     and model selection dropdown in sidebar.
     """
+    global CHAR_LIST, CHAR_INDEX, PROFILE_NAME_TO_ID
     update_activity()
+
+    if not CHAR_LIST:
+        try:
+            CHAR_LIST = await fetch_characters_list()
+        except Exception as e:
+            logger.warning(f"Failed to fetch characters from API in start(): {e}, using cache")
+            CHAR_LIST = load_cached_characters()
+        CHAR_INDEX = {c["id"]: c for c in CHAR_LIST} if CHAR_LIST else {}
+        PROFILE_NAME_TO_ID = {c["name"]: c["id"] for c in CHAR_LIST if "name" in c and "id" in c}
 
     if not CHAR_LIST:
         await cl.Message(content="⚠️ No characters loaded. Please check configuration.").send()
         return
 
     current_profile_name = cl.user_session.get("chat_profile")
-    char_summary = next((c for c in CHAR_LIST if c["name"] == current_profile_name), None)
+    char_id = PROFILE_NAME_TO_ID.get(current_profile_name)
     
-    if not char_summary:
-        char_summary = CHAR_LIST[0]
-        logger.warning(f"Profile '{current_profile_name}' not found, using {char_summary['name']}")
+    if not char_id:
+        char_id = CHAR_LIST[0]["id"]
+        logger.warning(f"Profile '{current_profile_name}' not found, using {CHAR_LIST[0]['name']}")
 
     try:
-        char = await fetch_character_private(char_summary["id"])
+        char = await fetch_character_private(char_id)
         logger.info(f"Fetched full character data for: {char['name']}")
     except Exception as e:
         logger.error(f"Failed to fetch character details: {e}")
@@ -359,7 +404,7 @@ async def main(message: cl.Message):
     default_model = cl.user_session.get("default_model")
     selected_model = settings.get("Model", default_model)
 
-    history = cl.user_session.get("history", [{"role": "system", "content": char["prompts"]["system"]}])
+    history = cl.user_session.get("history", [{"role": "system", "content": char.get("prompts", {}).get("system", "")}])
     history.append({"role": "user", "content": message.content})
 
     author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
