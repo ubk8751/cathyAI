@@ -262,6 +262,25 @@ if not CHAR_API_URL:
 if not CHAR_API_KEY:
     logger.warning("CHAR_API_KEY not configured (character-api may reject requests)")
 
+@cl.password_auth_callback
+def auth_callback(username: str, password: str):
+    """Authenticate user against SQLite database.
+    
+    :param username: Username to authenticate
+    :type username: str
+    :param password: Password to verify
+    :type password: str
+    :return: User object if authenticated, None otherwise
+    :rtype: cl.User or None
+    """
+    from users import verify_user
+    
+    ok, role = verify_user(username, password)
+    if not ok:
+        return None
+    
+    return cl.User(identifier=username, metadata={"role": role})
+
 @cl.set_chat_profiles
 async def chat_profiles():
     """Define available chat profiles from character API.

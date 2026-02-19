@@ -62,14 +62,17 @@ class TestWebbuiChat:
         """Test that docker-compose.yaml has proper structure."""
         compose = (REPO_ROOT / "webbui_chat" / "docker-compose.yaml").read_text()
         assert "webbui_chat:" in compose, "docker-compose.yaml missing webbui_chat service"
+        assert "webbui_auth_api:" in compose, "docker-compose.yaml missing webbui_auth_api service"
         assert "8000:8000" in compose, "docker-compose.yaml missing port 8000"
+        assert "8001:8001" in compose, "docker-compose.yaml missing port 8001"
         assert "../characters:/app/characters" in compose, "docker-compose.yaml missing characters volume"
         assert "../public:/app/public" in compose, "docker-compose.yaml missing public volume"
+        assert "./state:/state" in compose, "docker-compose.yaml missing state volume"
 
     def test_requirements_has_dependencies(self):
         """Test that requirements.txt has necessary dependencies."""
         content = (REPO_ROOT / "webbui_chat" / "requirements.txt").read_text()
-        required = ["chainlit", "httpx", "python-dotenv"]
+        required = ["chainlit", "httpx", "python-dotenv", "fastapi", "uvicorn", "passlib"]
         
         for dep in required:
             assert dep in content, f"Missing dependency: {dep}"
@@ -85,12 +88,15 @@ class TestWebbuiChat:
         assert "CHAT_API_URL" in content, ".env.template missing CHAT_API_URL"
         assert "MODELS_API_URL" in content, ".env.template missing MODELS_API_URL"
         assert "CHAR_API_URL" in content, ".env.template missing CHAR_API_URL"
+        assert "CHAINLIT_AUTH_SECRET" in content, ".env.template missing CHAINLIT_AUTH_SECRET"
+        assert "USER_ADMIN_API_KEY" in content, ".env.template missing USER_ADMIN_API_KEY"
 
     def test_app_imports(self):
         """Test that app.py can be imported without errors."""
         assert hasattr(self.app, 'start'), "app.py missing start function"
         assert hasattr(self.app, 'main'), "app.py missing main function"
         assert hasattr(self.app, 'update_settings'), "app.py missing update_settings function"
+        assert hasattr(self.app, 'auth_callback'), "app.py missing auth_callback function"
         assert hasattr(self.app, 'CHAR_LIST'), "app.py missing CHAR_LIST"
         assert hasattr(self.app, 'CHAR_INDEX'), "app.py missing CHAR_INDEX"
         assert hasattr(self.app, 'CHAR_PRIVATE_ETAGS'), "app.py missing CHAR_PRIVATE_ETAGS"
