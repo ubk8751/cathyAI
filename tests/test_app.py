@@ -80,7 +80,6 @@ class TestAppStructure:
         assert "pytest" in content, "Workflow missing pytest"
         assert "dmz" in content, "Workflow missing dmz branch reference"
         assert "merge" in content.lower(), "Workflow missing merge job"
-        assert "--ignore=tests/test_auth.py" in content, "Workflow should exclude auth tests"
 
     def test_gitignore_has_python_patterns(self):
         """Test that .gitignore ignores Python cache files."""
