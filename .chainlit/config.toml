@@ -93,7 +93,8 @@ reaction_on_message_received = false
 [UI]
 
 # Optional: App name in header/title
-name = "Cathy AI"
+name = "CathyAI"
+language = "en-US"
 
 # Optional: Dark mode by default (uncomment if you want)
 # default_theme = "dark"
