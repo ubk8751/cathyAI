@@ -6,8 +6,8 @@ httpx
 # User management
 fastapi
 uvicorn[standard]
-passlib==1.7.4
-bcrypt==3.2.2
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
 
-# Optional (only needed if you actually run tests in this container)
+# Testing
 pytest

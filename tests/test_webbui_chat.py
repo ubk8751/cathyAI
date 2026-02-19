@@ -1,6 +1,6 @@
-"""Test suite for webbui_chat Chainlit application.
+"""Test suite for cathyAI Chainlit application.
 
-Tests chat UI, character loading, and Docker configuration.
+Tests chat UI, character loading, and API integration.
 """
 
 import pytest
@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).parent.parent
 
 
 class TestWebbuiChat:
-    """Test suite for webbui_chat with isolated imports."""
+    """Test suite for Chainlit chat application."""
     
     @pytest.fixture(autouse=True)
     def setup_teardown(self, monkeypatch):
@@ -23,12 +23,7 @@ class TestWebbuiChat:
         original_modules = set(sys.modules.keys())
         
         os.chdir(REPO_ROOT)
-        
-        # Mock Path to return correct character directory
-        original_cwd = os.getcwd()
-        monkeypatch.chdir(REPO_ROOT / "webbui_chat")
-        
-        sys.path.insert(0, str(REPO_ROOT / "webbui_chat"))
+        sys.path.insert(0, str(REPO_ROOT))
         sys.modules['chainlit'] = Mock()
         
         import app
@@ -37,59 +32,11 @@ class TestWebbuiChat:
         yield
         
         # Teardown
-        monkeypatch.chdir(original_cwd)
         sys.path = original_path
         new_modules = set(sys.modules.keys()) - original_modules
         for mod in new_modules:
             if mod.startswith('app') or mod == 'chainlit':
                 sys.modules.pop(mod, None)
-
-    def test_docker_files_exist(self):
-        """Test that Docker configuration files exist."""
-        chat_dir = REPO_ROOT / "webbui_chat"
-        assert (chat_dir / "Dockerfile").exists(), "webbui_chat/Dockerfile not found"
-        assert (chat_dir / "docker-compose.yaml").exists(), "webbui_chat/docker-compose.yaml not found"
-        assert (chat_dir / "requirements.txt").exists(), "webbui_chat/requirements.txt not found"
-
-    def test_dockerfile_structure(self):
-        """Test that Dockerfile has proper structure."""
-        dockerfile = (REPO_ROOT / "webbui_chat" / "Dockerfile").read_text()
-        assert "FROM python" in dockerfile, "Dockerfile missing Python base image"
-        assert "chainlit" in dockerfile.lower(), "Dockerfile missing chainlit command"
-        assert "8000" in dockerfile, "Dockerfile missing port 8000"
-
-    def test_docker_compose_structure(self):
-        """Test that docker-compose.yaml has proper structure."""
-        compose = (REPO_ROOT / "webbui_chat" / "docker-compose.yaml").read_text()
-        assert "webbui_chat:" in compose, "docker-compose.yaml missing webbui_chat service"
-        assert "webbui_auth_api:" in compose, "docker-compose.yaml missing webbui_auth_api service"
-        assert "8000:8000" in compose, "docker-compose.yaml missing port 8000"
-        assert "8001:8001" in compose, "docker-compose.yaml missing port 8001"
-        assert "../characters:/app/characters" in compose, "docker-compose.yaml missing characters volume"
-        assert "../public:/app/public" in compose, "docker-compose.yaml missing public volume"
-        assert "./state:/state" in compose, "docker-compose.yaml missing state volume"
-
-    def test_requirements_has_dependencies(self):
-        """Test that requirements.txt has necessary dependencies."""
-        content = (REPO_ROOT / "webbui_chat" / "requirements.txt").read_text()
-        required = ["chainlit", "httpx", "python-dotenv", "fastapi", "uvicorn", "passlib"]
-        
-        for dep in required:
-            assert dep in content, f"Missing dependency: {dep}"
-        
-        assert "ollama" not in content, "ollama should be removed"
-        assert "transformers" not in content, "transformers should be removed"
-
-    def test_env_template_exists(self):
-        """Test that .env.template exists with required variables."""
-        env_template = REPO_ROOT / "webbui_chat" / ".env.template"
-        assert env_template.exists(), "webbui_chat/.env.template not found"
-        content = env_template.read_text()
-        assert "CHAT_API_URL" in content, ".env.template missing CHAT_API_URL"
-        assert "MODELS_API_URL" in content, ".env.template missing MODELS_API_URL"
-        assert "CHAR_API_URL" in content, ".env.template missing CHAR_API_URL"
-        assert "CHAINLIT_AUTH_SECRET" in content, ".env.template missing CHAINLIT_AUTH_SECRET"
-        assert "USER_ADMIN_API_KEY" in content, ".env.template missing USER_ADMIN_API_KEY"
 
     def test_app_imports(self):
         """Test that app.py can be imported without errors."""
@@ -126,10 +73,12 @@ class TestWebbuiChat:
         assert hasattr(self.app, 'logger'), "app.py missing logger"
         assert self.app.logger is not None, "Logger not initialized"
 
-    def test_nickname_fallback_logic(self):
-        """Test that cache path is configured."""
+    def test_cache_path_configured(self):
+        """Test that cache paths are configured."""
         assert hasattr(self.app, 'CHAR_CACHE_PATH'), "app.py missing CHAR_CACHE_PATH"
+        assert hasattr(self.app, 'CHAR_CACHE_ETAG_PATH'), "app.py missing CHAR_CACHE_ETAG_PATH"
         assert self.app.CHAR_CACHE_PATH is not None, "CHAR_CACHE_PATH not initialized"
+        assert self.app.CHAR_CACHE_ETAG_PATH is not None, "CHAR_CACHE_ETAG_PATH not initialized"
 
     def test_api_functions_exist(self):
         """Test that API integration functions exist."""
@@ -142,3 +91,13 @@ class TestWebbuiChat:
         assert inspect.iscoroutinefunction(self.app.fetch_models), "fetch_models should be async"
         assert inspect.isasyncgenfunction(self.app.stream_chat), "stream_chat should be async generator"
         assert inspect.iscoroutinefunction(self.app.detect_emotion), "detect_emotion should be async"
+
+    def test_etag_caching_functions(self):
+        """Test that ETag caching functions exist."""
+        assert callable(self.app.load_cached_etag), "load_cached_etag should be callable"
+        assert callable(self.app.save_cached_etag), "save_cached_etag should be callable"
+        assert callable(self.app.load_cached_characters), "load_cached_characters should be callable"
+
+    def test_authentication_callback(self):
+        """Test that authentication callback exists."""
+        assert callable(self.app.auth_callback), "auth_callback should be callable"

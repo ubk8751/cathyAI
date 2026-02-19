@@ -1,116 +1,113 @@
 # cathyAI
 
-A modular AI companion platform with a Chainlit web UI and FastAPI character management service. Features multi-character support, live model switching, and shared character data between services.
+A unified AI companion platform with Chainlit web UI, FastAPI authentication service, and external character API integration. Features multi-character support, live model switching, user authentication, and ETag-based caching.
 
 ## Overview
 
-cathyAI consists of two independent services:
+cathyAI is a single-service application with two components:
 
-- **webbui_chat** - Chainlit-based chat UI (port 8000)
-- **characters_api** - FastAPI character data service (port 8090)
+- **Chainlit Chat UI** - Main chat interface (port 8000)
+- **Auth API** - FastAPI user management service (port 8001)
 
-The webbui_chat service fetches character data from characters_api, with local caching for resilience.
+The application fetches character data from an external character API with ETag-based caching for bandwidth efficiency.
 
 ## Features
 
-- **Multi-Character Support** - JSON-based characters with avatars, greetings, and system prompts
-- **Character API** - RESTful API for character data with file resolution and alias management
-- **User Authentication** - Password-based login with registration and admin management
+- **Multi-Character Support** - Fetches character profiles from external API with local caching
+- **User Authentication** - SQLite-based password authentication with bcrypt hashing
+- **User Management** - Registration with invite codes, admin controls, role-based access
 - **Live Model Switching** - Dynamic model selection via external API
-- **API-Based Architecture** - External chat, model listing, and emotion detection APIs
-- **Docker Ready** - Each service has its own docker-compose configuration
+- **ETag Caching** - Efficient bandwidth usage with HTTP 304 responses
+- **API-Based Architecture** - External chat, model listing, character data, and emotion detection APIs
+- **Docker Ready** - Single docker-compose configuration with two containers
 - **CI/CD Pipeline** - Automated testing with GitHub Actions
 
 ## Project Structure
 
 ```
 cathyAI/
-├── characters/                     # Shared character data
-│   ├── *.json                      # Character configurations
-│   ├── system_prompt/              # External prompt files
-│   └── character_info/             # Character backstories
-├── public/avatars/                 # Shared avatar images
-├── webbui_chat/                    # Chainlit chat UI service
-│   ├── app.py                      # Main application
-│   ├── Dockerfile
-│   ├── docker-compose.yaml
-│   ├── requirements.txt
-│   └── .env
-├── characters_api/                 # FastAPI character service
-│   ├── app.py                      # API endpoints
-│   ├── Dockerfile
-│   ├── docker-compose.yaml
-│   ├── requirements.txt
-│   └── .env
+├── app.py                          # Main Chainlit application
+├── auth_api.py                     # FastAPI user management service
+├── users.py                        # User database operations
+├── bootstrap_admin.py              # Admin account creation script
+├── generate_secrets.py             # Secret key generation utility
+├── Dockerfile                      # Container image definition
+├── docker-compose.yaml             # Multi-container orchestration
+├── requirements.txt                # Python dependencies
+├── .env.template                   # Environment variable template
+├── .env                            # Local configuration (gitignored)
+├── chainlit.md                     # Chat UI welcome message
+├── .chainlit/                      # Chainlit configuration
+│   └── config.toml                 # UI settings
 ├── tests/                          # Test suites
-│   ├── test_app.py                 # Shared resource tests
+│   ├── test_app.py                 # Core application tests
+│   ├── test_auth.py                # Authentication tests
 │   ├── test_webbui_chat.py         # Chat UI tests
-│   └── test_characters_api.py      # API tests
+│   └── test_characters_api.py      # External API integration tests
 ├── .github/workflows/test.yml      # CI/CD pipeline
-└── README.md
+├── setup_git.sh                    # Git workflow setup script
+└── USER_MANAGEMENT.md              # Authentication documentation
 ```
 
-## Shared Resources
+## External Character API
 
-### Character Configuration
+The application expects an external character API (see [characters_api](https://github.com/ubk8751/cathyAI-character-api) for reference implementation) that provides:
 
-Add JSON files in `characters/`:
+- `GET /characters` - List all characters with public metadata
+- `GET /characters/{id}?view=private` - Full character data with resolved prompts
+- `GET /avatars/{filename}` - Avatar image serving
 
-```json
-{
-  "name": "Character name",
-  "nickname": "Optional nickname",
-  "avatar": "character_pfp.jpg",
-  "greeting": "Hello!",
-  "system_prompt": "character.prompt",
-  "description": "character.info",
-  "model": "llama3.1:8b"
-}
-```
-
-System prompts can be:
-- Inline text starting with "You"
-- Filename referencing `characters/system_prompt/*.prompt`
-
-Avatars go in `public/avatars/` and are served by both services.
+Characters are cached locally with ETag support for efficient bandwidth usage.
 
 ---
 
-## webbui_chat Service
-
-Chainlit-based chat interface with multi-character profiles and live model switching.
+## Application Setup
 
 ### Setup
 
 ```bash
-cd webbui_chat
-
 # Configure environment
 cp .env.template .env
-# Edit .env with your API endpoints
+# Edit .env with your API endpoints and secrets
 
-# Docker
+# Generate secrets
+python generate_secrets.py
+
+# Create admin account
+python bootstrap_admin.py
+
+# Docker (recommended)
 docker compose up -d --build
 
 # Local development
 pip install -r requirements.txt
-chainlit run app.py
+chainlit run app.py  # Chat UI on port 8000
+python auth_api.py   # Auth API on port 8001
 ```
 
-Access at http://localhost:8000
+Access chat UI at http://localhost:8000
 
 ### Environment Variables
 
 ```bash
 # Required: External API endpoints
-CHAT_API_URL=http://your-api:11434/api/chat
-MODELS_API_URL=http://your-api:11434/api/tags
+CHAT_API_URL=http://your-api:8081/api/chat
+MODELS_API_URL=http://your-api:8081/models
 
 # Required: Character API
 CHAR_API_URL=http://your-api:8090
 CHAR_API_KEY=your_key_here
 
-# Optional: Emotion detection
+# Required: Chainlit authentication
+CHAINLIT_AUTH_SECRET=<generate with generate_secrets.py>
+
+# User management
+USER_DB_PATH=/state/users.sqlite
+REGISTRATION_ENABLED=1
+REGISTRATION_REQUIRE_INVITE=1
+USER_ADMIN_API_KEY=<generate with generate_secrets.py>
+
+# Optional: Emotion detection (disabled by default)
 EMOTION_ENABLED=0
 EMOTION_API_URL=http://your-api:8001/emotion
 
@@ -153,123 +150,62 @@ EMOTION_TIMEOUT=10
 
 ### Features
 
-- Character profile dropdown with avatars (loaded from API)
-- Password authentication with user management
-- Live model switching via sidebar
-- Streaming chat responses with delta-based parser (prevents duplicate text)
-- Optional emotion detection
-- Session-based conversation history
-- Local character caching for offline resilience
+- **Character Profiles** - Dropdown with avatars loaded from external API
+- **User Authentication** - SQLite-based password authentication with bcrypt
+- **User Management** - Registration with invite codes, admin API for user control
+- **Live Model Switching** - Sidebar dropdown for model selection
+- **Streaming Chat** - Delta-based parser prevents duplicate text
+- **ETag Caching** - Efficient character data caching with HTTP 304 responses
+- **Optional Emotion Detection** - Configurable emotion analysis
+- **Session History** - Per-user conversation tracking
+- **Offline Resilience** - Local character cache fallback
 
-See [webbui_chat/USER_MANAGEMENT.md](webbui_chat/USER_MANAGEMENT.md) for authentication setup.
+See [USER_MANAGEMENT.md](USER_MANAGEMENT.md) for authentication setup.
 
 ---
 
-## characters_api Service
+## User Management
 
-FastAPI service providing RESTful access to character data with automatic file resolution.
+### Admin Operations
 
-### Setup
+The auth API (port 8001) provides admin endpoints:
 
+**POST /auth/register** - User registration (requires invite if enabled)
 ```bash
-cd characters_api
-
-# Configure environment
-cp .env.template .env
-# Edit .env with your settings
-
-# Docker
-docker compose up -d --build
-
-# Local development
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8090
+curl -X POST http://localhost:8001/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"user","password":"pass","invite_code":"code"}'
 ```
 
-Access at http://localhost:8090
-
-### Environment Variables
-
+**POST /auth/admin/invite** - Create invite code
 ```bash
-# Optional: API authentication
-CHAR_API_KEY=
-
-# Optional: Public URL for avatar links
-HOST_URL=http://192.168.1.58:8090
+curl -X POST http://localhost:8001/auth/admin/invite \
+  -H "x-admin-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"expires_hours":24}'
 ```
 
-### API Endpoints
-
-**GET /health** - Health check
-```json
-{"ok": true, "char_dir": "/app/characters", ...}
+**GET /auth/admin/users** - List all users
+```bash
+curl http://localhost:8001/auth/admin/users \
+  -H "x-admin-key: YOUR_ADMIN_KEY"
 ```
 
-**GET /characters** - List all characters
-```json
-{
-  "characters": [
-    {
-      "id": "[character_name]",
-      "name": "[full_character_name]",
-      "nickname": null|[list of alternative names],
-      "model": "llama3.1:8b",
-      "greeting": "Hello!",
-      "avatar": "[id]_pfp.jpg",
-      "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
-      "aliases": [full_list_of_names]
-    }
-  ]
-}
+**POST /auth/admin/disable** - Disable user
+```bash
+curl -X POST http://localhost:8001/auth/admin/disable \
+  -H "x-admin-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"user"}'
 ```
 
-**GET /characters/{char_id}?view=public|private** - Get character details
-
-Public view (safe for web UI, no prompt text):
-```json
-{
-  "id": "[character_name]",
-  "name": "[full_character_name]",
-  "nickname": null|"[nickname]",
-  "model": "llama3.1:8b",
-  "greeting": "Hello!",
-  "avatar": "[id]_pfp.jpg",
-  "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
-  "aliases": [full_list_of_names]
-}
+**POST /auth/admin/enable** - Re-enable user
+```bash
+curl -X POST http://localhost:8001/auth/admin/enable \
+  -H "x-admin-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"user"}'
 ```
-
-Private view (default, includes resolved prompts):
-```json
-{
-  "name": "[full_character_name]",
-  "system_prompt": "You are [character]...",
-  "character_background": "[character] is...",
-  "prompts": {
-    "system": "You are [character]...",
-    "background": "[character] is...",
-    "matrix_append_rules": "..."
-  },
-  "aliases": [full_list_of_names],
-  "avatar_url": "http://host:8090/avatars/[id]_pfp.jpg",
-  ...
-}
-```
-
-**GET /avatars/{filename}** - Serve avatar image (public, no auth required)
-
-### Features
-
-- **Public/Private Views** - Separate data exposure for web UI vs AI services
-- **ETag Caching** - HTTP 304 responses for unchanged resources (~95% bandwidth savings)
-- **Normalized Prompts** - Consistent `prompts.*` structure for AI consumption
-- Automatic system prompt file resolution
-- Character alias generation (name, nickname, ID)
-- Avatar URL generation
-- Optional API key authentication
-- Matrix-specific field support
-
-See [characters_api/API_ENHANCEMENTS.md](characters_api/API_ENHANCEMENTS.md) for detailed documentation on new features.
 
 ---
 
@@ -277,20 +213,20 @@ See [characters_api/API_ENHANCEMENTS.md](characters_api/API_ENHANCEMENTS.md) for
 
 ```bash
 # Run all tests
-pytest
+pytest tests/ -v
 
 # Run specific test suite
-pytest tests/test_webbui_chat.py -v
-pytest tests/test_characters_api.py -v
+pytest tests/test_app.py -v
+pytest tests/test_auth.py -v
 
 # Run specific test
-pytest tests/test_app.py::test_character_json_structure
+pytest tests/test_app.py::TestAppStructure::test_main_app_exists
 ```
 
 Test coverage:
-- **test_app.py** (10 tests) - Shared resources (characters, avatars, scripts)
-- **test_webbui_chat.py** (10 tests) - Chat UI (Docker, imports, API integration)
-- **test_characters_api.py** (16 tests) - API endpoints (public/private views, ETag caching, prompts)
+- **test_app.py** (10 tests) - Application structure and dependencies
+- **test_auth.py** (22 tests) - User authentication, registration, invite codes, admin operations
+- **test_webbui_chat.py** (7 tests) - Chat UI Docker configuration and imports
 
 ---
 
@@ -301,32 +237,46 @@ Test coverage:
    ./setup_git.sh
    git add .
    git commit -m "feat: ..."
-   git push origin dmz
+   git push
    ```
 
-2. GitHub Actions runs tests automatically
+2. GitHub Actions runs tests automatically (excludes auth tests)
 3. On pass → auto-merge to `main`
 4. Nightly auto-deploy:
    ```bash
    0 2 * * * cd /opt/cathyAI && git pull origin main && \
-     cd webbui_chat && docker compose up -d --build && \
-     cd ../characters_api && docker compose up -d --build
+     docker compose up -d --build
    ```
 
-## Development Standards
+## Docker Deployment
 
-See [.amazonq/rules/dev-standards.md](.amazonq/rules/dev-standards.md) for detailed development guidelines including:
-- PEP 8 compliance and reST docstring standards
-- Commit message format requirements
-- Post-change documentation update requirements
+The docker-compose.yaml defines two services:
+
+- **webbui_chat** - Main Chainlit application (port 8000)
+- **webbui_auth_api** - FastAPI auth service (port 8001)
+
+Both share the `/state` volume for SQLite database persistence.
+
+```bash
+# Build and start
+docker compose up -d --build
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+```
 
 ---
 
 ## Tech Stack
 
 - **Chat UI**: [Chainlit](https://github.com/Chainlit/chainlit)
-- **API Framework**: [FastAPI](https://fastapi.tiangolo.com/)
+- **Auth API**: [FastAPI](https://fastapi.tiangolo.com/)
 - **HTTP Client**: [httpx](https://www.python-httpx.org/)
+- **Password Hashing**: [passlib](https://passlib.readthedocs.io/) + [bcrypt](https://github.com/pyca/bcrypt/)
+- **Database**: SQLite3
 - **Testing**: pytest with class-based fixtures
 - **Containerization**: Docker + Docker Compose
 - **CI/CD**: GitHub Actions

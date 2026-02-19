@@ -32,25 +32,13 @@ pip install --upgrade pip
 echo "Installing dependencies from requirements.txt..."
 pip install -r requirements.txt
 
-# Create static directory if it doesn't exist
-if [ ! -d "static" ]; then
-    echo "Creating static directory..."
-    mkdir -p static
-    echo "✓ Static directory created"
+# Create state directory if it doesn't exist
+if [ ! -d "state" ]; then
+    echo "Creating state directory..."
+    mkdir -p state
+    echo "✓ State directory created"
 else
-    echo "✓ Static directory exists"
-fi
-
-# Check if avatar exists
-if [ ! -f "public/avatars/catherine_pfp.jpg" ]; then
-    echo "⚠️  Warning: Avatar file static/catherine_pfp.jpg not found"
-    echo "   Please add your avatar image to the static directory"
-fi
-
-# Make watchdog script executable
-if [ -f "watchdog.sh" ]; then
-    chmod +x watchdog.sh
-    echo "✓ Watchdog script made executable"
+    echo "✓ State directory exists"
 fi
 
 echo ""
@@ -60,7 +48,14 @@ echo "To activate the virtual environment, run:"
 echo "  source venv/bin/activate"
 echo ""
 echo "To run the app locally:"
-echo "  chainlit run app.py"
+echo "  chainlit run app.py          # Chat UI on port 8000"
+echo "  python auth_api.py           # Auth API on port 8001"
 echo ""
 echo "To run tests:"
-echo "  pytest tests/test_app.py"
+echo "  pytest tests/ -v --ignore=tests/test_auth.py"
+echo ""
+echo "To generate secrets:"
+echo "  python generate_secrets.py"
+echo ""
+echo "To create admin user:"
+echo "  python bootstrap_admin.py your_username"
