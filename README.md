@@ -15,6 +15,7 @@ The webbui_chat service fetches character data from characters_api, with local c
 
 - **Multi-Character Support** - JSON-based characters with avatars, greetings, and system prompts
 - **Character API** - RESTful API for character data with file resolution and alias management
+- **User Authentication** - Password-based login with registration and admin management
 - **Live Model Switching** - Dynamic model selection via external API
 - **API-Based Architecture** - External chat, model listing, and emotion detection APIs
 - **Docker Ready** - Each service has its own docker-compose configuration
@@ -153,11 +154,14 @@ EMOTION_TIMEOUT=10
 ### Features
 
 - Character profile dropdown with avatars (loaded from API)
+- Password authentication with user management
 - Live model switching via sidebar
 - Streaming chat responses with delta-based parser (prevents duplicate text)
 - Optional emotion detection
 - Session-based conversation history
 - Local character caching for offline resilience
+
+See [webbui_chat/USER_MANAGEMENT.md](webbui_chat/USER_MANAGEMENT.md) for authentication setup.
 
 ---
 

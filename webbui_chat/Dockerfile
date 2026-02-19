@@ -3,6 +3,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
+COPY users.py .
+COPY auth_api.py .
+COPY bootstrap_admin.py .
 COPY chainlit.md .
 RUN mkdir -p .chainlit
 EXPOSE 8000

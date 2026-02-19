@@ -3,5 +3,10 @@ chainlit
 python-dotenv
 httpx
 
+# User management
+fastapi
+uvicorn[standard]
+passlib[bcrypt]
+
 # Optional (only needed if you actually run tests in this container)
 pytest
