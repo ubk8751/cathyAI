@@ -33,7 +33,7 @@ PY
 
 ### 2. Update .env
 
-Add to `webbui_chat/.env`:
+Add to `.env`:
 
 ```bash
 # Chainlit authentication
@@ -49,13 +49,12 @@ USER_ADMIN_API_KEY=<generated_key>
 ### 3. Create State Directory
 
 ```bash
-mkdir -p webbui_chat/state
+mkdir -p state
 ```
 
 ### 4. Bootstrap Admin User
 
 ```bash
-cd webbui_chat
 docker compose run --rm webbui_chat python bootstrap_admin.py your_username
 # Enter password when prompted
 ```
@@ -197,8 +196,8 @@ Response:
 ### Can't login after setup
 
 - Verify `CHAINLIT_AUTH_SECRET` is set
-- Check admin user was created: `docker exec -it webbui_chat-webbui_chat-1 ls -la /state/`
-- Check logs: `docker logs webbui_chat-webbui_chat-1`
+- Check admin user was created: `docker exec -it cathyai-webbui_chat-1 ls -la /state/`
+- Check logs: `docker logs cathyai-webbui_chat-1`
 
 ### Registration fails
 
@@ -216,20 +215,20 @@ Response:
 
 - Verify port 8001 is mapped in docker-compose.yaml
 - Check service is running: `docker ps`
-- Check logs: `docker logs webbui_chat-webbui_auth_api-1`
+- Check logs: `docker logs cathyai-webbui_auth_api-1`
 
 ## Backup
 
 ### Backup User Database
 
 ```bash
-cp webbui_chat/state/users.sqlite webbui_chat/state/users.sqlite.backup
+cp state/users.sqlite state/users.sqlite.backup
 ```
 
 ### Restore
 
 ```bash
-cp webbui_chat/state/users.sqlite.backup webbui_chat/state/users.sqlite
+cp state/users.sqlite.backup state/users.sqlite
 docker compose restart
 ```
 
