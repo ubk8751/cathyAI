@@ -12,7 +12,8 @@ jobs:
       - run: python3 -m venv venv
       - run: |
           . venv/bin/activate
-          pip install pytest fastapi httpx python-dotenv
+          pip install -r webbui_chat/requirements.txt
+          pip install -r characters_api/requirements.txt
       - run: |
           . venv/bin/activate
           pytest tests/ -v
