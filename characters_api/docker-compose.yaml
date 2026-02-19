@@ -7,7 +7,6 @@ services:
     volumes:
       - ../characters:/app/characters
       - ../public:/app/public
-      - /tmp/activity.last:/tmp/activity.last
     env_file:
       - .env
     restart: unless-stopped
