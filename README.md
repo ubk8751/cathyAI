@@ -17,7 +17,6 @@ The webbui_chat service fetches character data from characters_api, with local c
 - **Character API** - RESTful API for character data with file resolution and alias management
 - **Live Model Switching** - Dynamic model selection via external API
 - **API-Based Architecture** - External chat, model listing, and emotion detection APIs
-- **Energy Efficient** - Container shutdown after 5 min inactivity
 - **Docker Ready** - Each service has its own docker-compose configuration
 - **CI/CD Pipeline** - Automated testing with GitHub Actions
 
@@ -47,8 +46,6 @@ cathyAI/
 │   ├── test_webbui_chat.py         # Chat UI tests
 │   └── test_characters_api.py      # API tests
 ├── .github/workflows/test.yml      # CI/CD pipeline
-├── .env.template                   # Environment template
-├── watchdog.sh                     # Inactivity monitor
 └── README.md
 ```
 
@@ -157,10 +154,9 @@ EMOTION_TIMEOUT=10
 
 - Character profile dropdown with avatars (loaded from API)
 - Live model switching via sidebar
-- Streaming chat responses
+- Streaming chat responses with delta-based parser (prevents duplicate text)
 - Optional emotion detection
 - Session-based conversation history
-- Activity tracking for watchdog
 - Local character caching for offline resilience
 
 ---
@@ -288,22 +284,9 @@ pytest tests/test_app.py::test_character_json_structure
 ```
 
 Test coverage:
-- **test_app.py** (11 tests) - Shared resources (characters, avatars, scripts)
+- **test_app.py** (10 tests) - Shared resources (characters, avatars, scripts)
 - **test_webbui_chat.py** (10 tests) - Chat UI (Docker, imports, API integration)
 - **test_characters_api.py** (16 tests) - API endpoints (public/private views, ETag caching, prompts)
-
----
-
-## Energy Saving
-
-Full container shutdown after 5 min inactivity:
-
-```bash
-# Add to crontab
-* * * * * /opt/cathyAI/watchdog.sh
-```
-
-The watchdog script monitors `/tmp/activity.last` and shuts down containers when inactive.
 
 ---
 

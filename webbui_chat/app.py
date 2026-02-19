@@ -262,19 +262,6 @@ if not CHAR_API_URL:
 if not CHAR_API_KEY:
     logger.warning("CHAR_API_KEY not configured (character-api may reject requests)")
 
-def update_activity():
-    """Update activity timestamp for watchdog monitoring.
-    
-    Writes current Unix timestamp to /tmp/activity.last for container
-    shutdown monitoring by watchdog.sh script.
-    """
-    try:
-        Path("/tmp/activity.last").write_text(str(int(time.time())))
-    except Exception as e:
-        logger.error(f"Failed to update activity timestamp: {e}")
-
-update_activity()
-
 @cl.set_chat_profiles
 async def chat_profiles():
     """Define available chat profiles from character API.
@@ -321,7 +308,6 @@ async def start():
     and model selection dropdown in sidebar.
     """
     global CHAR_LIST, CHAR_INDEX, PROFILE_NAME_TO_ID
-    update_activity()
 
     if not CHAR_LIST:
         try:
@@ -408,7 +394,6 @@ async def main(message: cl.Message):
     :param message: Incoming message from user
     :type message: cl.Message
     """
-    update_activity()
 
     char = cl.user_session.get("char")
     if not char:
@@ -465,5 +450,4 @@ async def heartbeat():
     :return: Status string indicating active state
     :rtype: str
     """
-    update_activity()
     return "Active"

@@ -83,18 +83,6 @@ class TestSharedResources:
         assert public_avatars.exists(), "public/avatars directory not found"
         assert public_avatars.is_dir(), "public/avatars is not a directory"
 
-    def test_watchdog_script_exists(self):
-        """Test that watchdog script exists and has correct logic.
-        
-        Validates watchdog.sh contains activity tracking and shutdown commands.
-        """
-        watchdog = REPO_ROOT / "watchdog.sh"
-        assert watchdog.exists(), "watchdog.sh not found"
-        content = watchdog.read_text()
-        assert "activity.last" in content, "watchdog.sh missing activity.last reference"
-        assert "docker compose down" in content, "watchdog.sh missing docker compose down command"
-        assert "#!/bin/bash" in content, "watchdog.sh missing shebang"
-
     def test_setup_scripts_exist(self):
         """Test that setup scripts exist.
         
@@ -173,9 +161,6 @@ class TestSharedResources:
         
         webbui_content = webbui_compose.read_text()
         api_content = api_compose.read_text()
-        
-        # Both should mount activity tracking
-        assert "/tmp/activity.last:/tmp/activity.last" in webbui_content, "webbui_chat missing activity volume"
         
         # Both should mount shared directories
         assert "../characters:" in webbui_content, "webbui_chat missing characters volume"

@@ -96,7 +96,6 @@ class TestWebbuiChat:
         assert hasattr(self.app, 'CHAR_PRIVATE_ETAGS'), "app.py missing CHAR_PRIVATE_ETAGS"
         assert hasattr(self.app, 'PROFILE_NAME_TO_ID'), "app.py missing PROFILE_NAME_TO_ID"
         assert hasattr(self.app, 'chat_profiles'), "app.py missing chat_profiles function"
-        assert hasattr(self.app, 'update_activity'), "app.py missing update_activity function"
         assert hasattr(self.app, 'fetch_models'), "app.py missing fetch_models function"
         assert hasattr(self.app, 'stream_chat'), "app.py missing stream_chat function"
         assert hasattr(self.app, 'detect_emotion'), "app.py missing detect_emotion function"
