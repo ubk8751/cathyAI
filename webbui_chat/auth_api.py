@@ -4,6 +4,8 @@ import os
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from users import create_user, disable_user, enable_user, create_invite, list_users
+from users import init_db
+init_db()
 
 app = FastAPI(title="cathyAI Auth API")
 
