@@ -37,6 +37,9 @@ EMOTION_ENABLED = os.getenv("EMOTION_ENABLED", "0") == "1"
 CHAR_CACHE_PATH = Path("/tmp/characters_cache.json")
 CHAR_CACHE_ETAG_PATH = Path("/tmp/characters_cache.etag")
 STATE_DIR = Path(os.getenv("STATE_DIR", "/state"))
+AUTH_API_URL = os.getenv("AUTH_API_URL", "http://webbui_auth_api:8001").rstrip("/")
+AUTH_TIMEOUT = float(os.getenv("AUTH_TIMEOUT", "5"))
+USER_ADMIN_API_KEY = os.getenv("USER_ADMIN_API_KEY", "")
 
 # HTTP client
 client = httpx.AsyncClient()
@@ -281,6 +284,70 @@ async def identity_resolve(external_id: str):
         logger.warning(f"Identity resolve failed for {external_id}: {e}")
         return {}
 
+async def identity_link(external_id: str, preferred_name: str):
+    """Link external user ID to identity with preferred name.
+    
+    :param external_id: External identifier to link
+    :type external_id: str
+    :param preferred_name: Preferred display name for user
+    :type preferred_name: str
+    :return: Identity data from link operation, or empty dict if failed
+    :rtype: dict
+    """
+    if not IDENTITY_API_URL:
+        return {}
+    headers = {"x-api-key": IDENTITY_API_KEY} if IDENTITY_API_KEY else {}
+    try:
+        r = await client.post(
+            f"{IDENTITY_API_URL}/identity/link",
+            json={"external_id": external_id, "preferred_name": preferred_name},
+            headers=headers,
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json() if r.text else {}
+    except Exception as e:
+        logger.warning(f"Identity link failed for {external_id}: {e}")
+        return {}
+
+async def identity_ensure(external_id: str, username: str | None):
+    """Ensure identity exists, creating if necessary.
+    
+    Attempts to resolve identity, and if not found (404), creates a link
+    and resolves again. Provides auto-provisioning for new users.
+    
+    :param external_id: External identifier to ensure
+    :type external_id: str
+    :param username: Username to use as fallback preferred name
+    :type username: str or None
+    :return: Identity data with person_id and preferred_name, or empty dict if failed
+    :rtype: dict
+    """
+    if not IDENTITY_API_URL:
+        return {}
+    headers = {"x-api-key": IDENTITY_API_KEY} if IDENTITY_API_KEY else {}
+    try:
+        r = await client.get(
+            f"{IDENTITY_API_URL}/identity/resolve",
+            params={"external_id": external_id},
+            headers=headers,
+            timeout=10,
+        )
+        if r.status_code == 404:
+            # Create/link then resolve again
+            await identity_link(external_id, username or "there")
+            r = await client.get(
+                f"{IDENTITY_API_URL}/identity/resolve",
+                params={"external_id": external_id},
+                headers=headers,
+                timeout=10,
+            )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logger.warning(f"Identity ensure failed for {external_id}: {e}")
+        return {}
+
 # Load characters from API or cache
 CHAR_INDEX = {}
 CHAR_LIST = []
@@ -302,6 +369,33 @@ def session_id() -> str:
     """
     sid = cl.user_session.get("id") or "unknown"
     return f"chainlit:{sid}"
+
+def is_admin() -> bool:
+    """Check if current user has admin role.
+    
+    :return: True if user is admin, False otherwise
+    :rtype: bool
+    """
+    return cl.user_session.get("auth_role") == "admin"
+
+async def require_admin_or_warn() -> bool:
+    """Require admin role or send warning message.
+    
+    :return: True if user is admin, False otherwise
+    :rtype: bool
+    """
+    if is_admin():
+        return True
+    await cl.Message(content="❌ Admin only.").send()
+    return False
+
+def _admin_headers():
+    """Generate headers for admin API requests.
+    
+    :return: Dictionary with x-admin-key header if configured
+    :rtype: dict
+    """
+    return {"x-admin-key": USER_ADMIN_API_KEY} if USER_ADMIN_API_KEY else {}
 
 def append_event(sender: str, text: str):
     """Append conversation event to session log.
@@ -340,7 +434,7 @@ def append_event(sender: str, text: str):
 
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
-    """Authenticate user against SQLite database.
+    """Authenticate user via auth API.
     
     :param username: Username to authenticate
     :type username: str
@@ -349,13 +443,29 @@ def auth_callback(username: str, password: str):
     :return: User object if authenticated, None otherwise
     :rtype: cl.User or None
     """
-    from users import verify_user
-    
-    ok, role = verify_user(username, password)
-    if not ok:
+    logger.info(f"[AUTH] login attempt username={username!r}")
+    try:
+        with httpx.Client(timeout=AUTH_TIMEOUT) as c:
+            r = c.post(
+                f"{AUTH_API_URL}/auth/login",
+                json={"username": username, "password": password},
+            )
+        if r.status_code != 200:
+            logger.info(f"[AUTH] failed status={r.status_code}")
+            return None
+        
+        data = r.json()
+        role = data.get("role", "user")
+        logger.info(f"[AUTH] ok role={role}")
+        
+        # Persist into session for later handlers
+        cl.user_session.set("auth_username", username)
+        cl.user_session.set("auth_role", role)
+        
+        return cl.User(identifier=username, metadata={"role": role})
+    except Exception as e:
+        logger.exception(f"[AUTH] auth_api error: {e}")
         return None
-    
-    return cl.User(identifier=username, metadata={"role": role})
 
 @cl.set_chat_profiles
 async def chat_profiles():
@@ -435,12 +545,22 @@ async def start():
     cl.user_session.set("char", char)
     cl.user_session.set("char_id", char_id)
     
-    # Resolve user identity
-    username = getattr(cl.user, "identifier", None)
-    external_user_id = f"chainlit:username:{username}" if username else "chainlit:anonymous"
-    cl.user_session.set("external_user_id", external_user_id)
+    # Resolve user identity (reliable)
+    username = cl.user_session.get("auth_username")
+    if not username:
+        app_user = getattr(cl, "user", None)
+        username = getattr(app_user, "identifier", None) if app_user else None
     
-    ident = await identity_resolve(external_user_id)
+    # Fallback: if somehow missing, use session id (still stable per chat)
+    sid = cl.user_session.get("id") or "unknown"
+    external_user_id = f"chainlit:username:{username}" if username else f"chainlit:session:{sid}"
+    
+    cl.user_session.set("external_user_id", external_user_id)
+    logger.info(f"[IDENT] user={username!r} external_user_id={external_user_id!r}")
+    
+    ident = await identity_ensure(external_user_id, username)
+    if not ident:
+        ident = {"person_id": f"local:{username or sid}", "preferred_name": username or "there"}
     cl.user_session.set("person_id", ident.get("person_id"))
     preferred_name = ident.get("preferred_name") or username or "there"
     cl.user_session.set("preferred_name", preferred_name)
@@ -514,13 +634,123 @@ async def main(message: cl.Message):
     
     # Debug command: /whoami
     if message.content.strip().lower() == "/whoami":
+        username = cl.user_session.get("auth_username")
+        role = cl.user_session.get("auth_role")
+        
+        # Fallback to chainlit user object
+        if not username or not role:
+            u = getattr(cl, "user", None)
+            if u:
+                username = username or getattr(u, "identifier", None)
+                role = role or (getattr(u, "metadata", {}) or {}).get("role")
+        
         await cl.Message(
             content=(
+                f"username: {username}\n"
+                f"role: {role}\n"
                 f"external_user_id: {cl.user_session.get('external_user_id')}\n"
                 f"person_id: {cl.user_session.get('person_id')}\n"
                 f"preferred_name: {cl.user_session.get('preferred_name')}"
             )
         ).send()
+        return
+    
+    # Admin command: /admin_users
+    if message.content.strip() == "/admin_users":
+        if not await require_admin_or_warn():
+            return
+        try:
+            async with httpx.AsyncClient(timeout=AUTH_TIMEOUT) as c:
+                r = await c.get(f"{AUTH_API_URL}/auth/admin/users", headers=_admin_headers())
+            if r.status_code != 200:
+                await cl.Message(content=f"⚠️ Auth API error: {r.status_code} {r.text[:200]}").send()
+                return
+            users = r.json().get("users", [])
+            lines = [f"- {u['username']} ({u['role']}) active={u['is_active']}" for u in users]
+            await cl.Message(content="Users:\n" + "\n".join(lines)).send()
+        except Exception as e:
+            await cl.Message(content=f"⚠️ Error: {str(e)}").send()
+        return
+    
+    # Admin command: /admin_invite [hours]
+    if message.content.strip().startswith("/admin_invite"):
+        if not await require_admin_or_warn():
+            return
+        parts = message.content.split()
+        expires = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+        try:
+            async with httpx.AsyncClient(timeout=AUTH_TIMEOUT) as c:
+                r = await c.post(f"{AUTH_API_URL}/auth/admin/invite", json={"expires_hours": expires}, headers=_admin_headers())
+            if r.status_code != 200:
+                await cl.Message(content=f"⚠️ Auth API error: {r.status_code} {r.text[:200]}").send()
+                return
+            code = r.json().get("code")
+            await cl.Message(content=f"✅ Invite code: `{code}`").send()
+        except Exception as e:
+            await cl.Message(content=f"⚠️ Error: {str(e)}").send()
+        return
+    
+    # Admin command: /admin_setrole <username> <role>
+    if message.content.strip().startswith("/admin_setrole"):
+        if not await require_admin_or_warn():
+            return
+        parts = message.content.split()
+        if len(parts) != 3:
+            await cl.Message(content="Usage: /admin_setrole <username> <admin|user>").send()
+            return
+        username, role = parts[1], parts[2]
+        try:
+            async with httpx.AsyncClient(timeout=AUTH_TIMEOUT) as c:
+                r = await c.post(f"{AUTH_API_URL}/auth/admin/set_role", json={"username": username, "role": role}, headers=_admin_headers())
+            if r.status_code != 200:
+                await cl.Message(content=f"⚠️ Auth API error: {r.status_code} {r.text[:200]}").send()
+                return
+            msg = r.json().get("message")
+            await cl.Message(content=f"✅ {msg}").send()
+        except Exception as e:
+            await cl.Message(content=f"⚠️ Error: {str(e)}").send()
+        return
+    
+    # Admin command: /admin_disable <username>
+    if message.content.strip().startswith("/admin_disable"):
+        if not await require_admin_or_warn():
+            return
+        parts = message.content.split()
+        if len(parts) != 2:
+            await cl.Message(content="Usage: /admin_disable <username>").send()
+            return
+        username = parts[1]
+        try:
+            async with httpx.AsyncClient(timeout=AUTH_TIMEOUT) as c:
+                r = await c.post(f"{AUTH_API_URL}/auth/admin/disable", json={"username": username}, headers=_admin_headers())
+            if r.status_code != 200:
+                await cl.Message(content=f"⚠️ Auth API error: {r.status_code} {r.text[:200]}").send()
+                return
+            msg = r.json().get("message")
+            await cl.Message(content=f"✅ {msg}").send()
+        except Exception as e:
+            await cl.Message(content=f"⚠️ Error: {str(e)}").send()
+        return
+    
+    # Admin command: /admin_enable <username>
+    if message.content.strip().startswith("/admin_enable"):
+        if not await require_admin_or_warn():
+            return
+        parts = message.content.split()
+        if len(parts) != 2:
+            await cl.Message(content="Usage: /admin_enable <username>").send()
+            return
+        username = parts[1]
+        try:
+            async with httpx.AsyncClient(timeout=AUTH_TIMEOUT) as c:
+                r = await c.post(f"{AUTH_API_URL}/auth/admin/enable", json={"username": username}, headers=_admin_headers())
+            if r.status_code != 200:
+                await cl.Message(content=f"⚠️ Auth API error: {r.status_code} {r.text[:200]}").send()
+                return
+            msg = r.json().get("message")
+            await cl.Message(content=f"✅ {msg}").send()
+        except Exception as e:
+            await cl.Message(content=f"⚠️ Error: {str(e)}").send()
         return
 
     char = cl.user_session.get("char")
@@ -597,16 +827,6 @@ async def heartbeat():
     :rtype: str
     """
     return "Active"
-
-@cl.password_auth_callback
-def auth_callback(username: str, password: str):
-    logger.info(f"[AUTH] login attempt username={username!r}")
-    from users import verify_user
-    ok, role = verify_user(username, password)
-    logger.info(f"[AUTH] result ok={ok} role={role}")
-    if not ok:
-        return None
-    return cl.User(identifier=username, metadata={"role": role})
 
 # Shutdown hook for clean container stop
 import atexit

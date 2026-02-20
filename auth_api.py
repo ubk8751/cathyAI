@@ -3,7 +3,7 @@
 import os
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
-from users import create_user, disable_user, enable_user, create_invite, list_users
+from users import create_user, disable_user, enable_user, create_invite, list_users, verify_user, set_role
 from users import init_db
 init_db()
 
@@ -23,6 +23,10 @@ def verify_admin(x_admin_key: str = Header(None)):
     if not USER_ADMIN_API_KEY or x_admin_key != USER_ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Invalid admin key")
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 class RegisterRequest(BaseModel):
     username: str
     password: str
@@ -33,6 +37,10 @@ class DisableUserRequest(BaseModel):
 
 class EnableUserRequest(BaseModel):
     username: str
+
+class SetRoleRequest(BaseModel):
+    username: str
+    role: str
 
 class CreateInviteRequest(BaseModel):
     expires_hours: int = None
@@ -45,6 +53,21 @@ def health():
     :rtype: dict
     """
     return {"ok": True, "service": "auth_api"}
+
+@app.post("/auth/login")
+def login(req: LoginRequest):
+    """Verify user credentials.
+    
+    :param req: Login request with username and password
+    :type req: LoginRequest
+    :return: Success response with user role
+    :rtype: dict
+    :raises HTTPException: 401 if credentials invalid
+    """
+    ok, role = verify_user(req.username, req.password)
+    if not ok:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"ok": True, "role": role}
 
 @app.post("/auth/register")
 def register(req: RegisterRequest):
@@ -147,6 +170,26 @@ def admin_list_users(_admin: str = Header(None, alias="x-admin-key")):
     
     users = list_users()
     return {"ok": True, "users": users}
+
+@app.post("/auth/admin/set_role")
+def admin_set_role(req: SetRoleRequest, _admin: str = Header(None, alias="x-admin-key")):
+    """Set user role (admin only).
+    
+    :param req: Request with username and role
+    :type req: SetRoleRequest
+    :param _admin: Admin API key from header
+    :type _admin: str
+    :return: Success response
+    :rtype: dict
+    :raises HTTPException: 403 if not admin, 400 if invalid role, 404 if user not found
+    """
+    verify_admin(_admin)
+    
+    success, message = set_role(req.username, req.role)
+    if not success:
+        raise HTTPException(status_code=400 if "must be" in message else 404, detail=message)
+    
+    return {"ok": True, "message": message}
 
 if __name__ == "__main__":
     import uvicorn
