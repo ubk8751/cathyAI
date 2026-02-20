@@ -5,3 +5,8 @@ venv
 =24.0
 .env
 .amazonq
+# runtime state
+state/
+*.sqlite
+*.db
+/tmp/

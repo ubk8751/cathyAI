@@ -1,11 +1,12 @@
 :80 {
+  # Auth must go to the auth API container
+  handle_path /api/auth/* {
+    reverse_proxy webbui_auth_api:8001
+  }
+  
   # Try to proxy to the UI
   handle {
-    reverse_proxy webbui_chat:8000 {
-      health_uri /health
-      health_interval 2s
-      health_timeout 1s
-    }
+    reverse_proxy webbui_chat:8000
   }
 
   # If the UI isn't healthy, call the helper (which starts it and redirects)

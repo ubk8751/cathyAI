@@ -598,6 +598,16 @@ async def heartbeat():
     """
     return "Active"
 
+@cl.password_auth_callback
+def auth_callback(username: str, password: str):
+    logger.info(f"[AUTH] login attempt username={username!r}")
+    from users import verify_user
+    ok, role = verify_user(username, password)
+    logger.info(f"[AUTH] result ok={ok} role={role}")
+    if not ok:
+        return None
+    return cl.User(identifier=username, metadata={"role": role})
+
 # Shutdown hook for clean container stop
 import atexit
 import asyncio
