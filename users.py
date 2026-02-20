@@ -233,3 +233,32 @@ def list_users() -> list[dict]:
     
     conn.close()
     return [dict(row) for row in rows]
+
+def set_role(username: str, role: str) -> tuple[bool, str]:
+    """Set user role.
+    
+    :param username: Username to update
+    :type username: str
+    :param role: New role (admin or user)
+    :type role: str
+    :return: Tuple of (success, message)
+    :rtype: tuple[bool, str]
+    """
+    if role not in {"admin", "user"}:
+        return False, "Role must be 'admin' or 'user'"
+    
+    init_db()
+    conn = sqlite3.connect(USER_DB_PATH)
+    
+    result = conn.execute(
+        "UPDATE users SET role = ? WHERE username = ?",
+        (role, username)
+    )
+    conn.commit()
+    
+    if result.rowcount == 0:
+        conn.close()
+        return False, "User not found"
+    
+    conn.close()
+    return True, f"Role updated to {role}"
