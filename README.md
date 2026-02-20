@@ -16,6 +16,8 @@ The application fetches character data from an external character API with ETag-
 - **Multi-Character Support** - Fetches character profiles from external API with local caching
 - **User Authentication** - SQLite-based password authentication with bcrypt hashing
 - **User Management** - Registration with invite codes, admin controls, role-based access
+- **Identity Resolution** - Dynamic user identity mapping via external identity API
+- **Session Logging** - Persistent NDJSON conversation logs for memory/RAG foundation
 - **Live Model Switching** - Dynamic model selection via external API
 - **ETag Caching** - Efficient bandwidth usage with HTTP 304 responses
 - **API-Based Architecture** - External chat, model listing, character data, and emotion detection APIs
@@ -98,6 +100,10 @@ MODELS_API_URL=http://your-api:8081/models
 CHAR_API_URL=http://your-api:8090
 CHAR_API_KEY=your_key_here
 
+# Required: Identity API (for personalized user names)
+IDENTITY_API_URL=http://your-api:8092
+IDENTITY_API_KEY=your_key_here
+
 # Required: Chainlit authentication
 CHAINLIT_AUTH_SECRET=<generate with generate_secrets.py>
 
@@ -120,6 +126,9 @@ EMOTION_API_KEY=
 CHAT_TIMEOUT=120
 MODELS_TIMEOUT=10
 EMOTION_TIMEOUT=10
+
+# Optional: State directory (default: /state)
+STATE_DIR=/state
 ```
 
 ### External API Requirements
@@ -148,17 +157,29 @@ EMOTION_TIMEOUT=10
 {"label": "joy", "score": 0.87}
 ```
 
+**Identity API (GET)** - Optional user identity resolution:
+```json
+// Request: GET /identity/resolve?external_id=chainlit:username:alice
+// Headers: x-api-key: your_key
+
+// Response
+{"person_id": "p_alice", "preferred_name": "Alice"}
+```
+
 ### Features
 
 - **Character Profiles** - Dropdown with avatars loaded from external API
 - **User Authentication** - SQLite-based password authentication with bcrypt
 - **User Management** - Registration with invite codes, admin API for user control
+- **Identity Resolution** - Optional personalized names via external identity API
+- **Session Logging** - Persistent NDJSON logs in `/state/sessions/` for memory/RAG
 - **Live Model Switching** - Sidebar dropdown for model selection
 - **Streaming Chat** - Delta-based parser prevents duplicate text
 - **ETag Caching** - Efficient character data caching with HTTP 304 responses
 - **Optional Emotion Detection** - Configurable emotion analysis
 - **Session History** - Per-user conversation tracking
 - **Offline Resilience** - Local character cache fallback
+- **Debug Commands** - `/whoami` for identity verification
 
 See [USER_MANAGEMENT.md](USER_MANAGEMENT.md) for authentication setup.
 

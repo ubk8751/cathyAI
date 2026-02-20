@@ -24,16 +24,19 @@ CHAT_API_URL = os.getenv("CHAT_API_URL")
 MODELS_API_URL = os.getenv("MODELS_API_URL")
 EMOTION_API_URL = os.getenv("EMOTION_API_URL")
 CHAR_API_URL = os.getenv("CHAR_API_URL", "").rstrip("/")
+IDENTITY_API_URL = os.getenv("IDENTITY_API_URL", "").rstrip("/")
 CHAT_API_KEY = os.getenv("CHAT_API_KEY")
 MODELS_API_KEY = os.getenv("MODELS_API_KEY")
 EMOTION_API_KEY = os.getenv("EMOTION_API_KEY")
 CHAR_API_KEY = os.getenv("CHAR_API_KEY")
+IDENTITY_API_KEY = os.getenv("IDENTITY_API_KEY")
 CHAT_TIMEOUT = int(float(os.getenv("CHAT_TIMEOUT", "120")))
 MODELS_TIMEOUT = int(float(os.getenv("MODELS_TIMEOUT", "10")))
 EMOTION_TIMEOUT = int(float(os.getenv("EMOTION_TIMEOUT", "10")))
 EMOTION_ENABLED = os.getenv("EMOTION_ENABLED", "0") == "1"
 CHAR_CACHE_PATH = Path("/tmp/characters_cache.json")
 CHAR_CACHE_ETAG_PATH = Path("/tmp/characters_cache.etag")
+STATE_DIR = Path(os.getenv("STATE_DIR", "/state"))
 
 # HTTP client
 client = httpx.AsyncClient()
@@ -115,7 +118,7 @@ async def fetch_character_private(char_id: str):
     :rtype: dict
     :raises Exception: If API request fails
     """
-    global CHAR_PRIVATE_ETAGS
+    global CHAR_PRIVATE_ETAGS, CHAR_PRIVATE_CACHE
     url = f"{CHAR_API_URL}/characters/{char_id}?view=private"
     headers = char_headers()
     etag = CHAR_PRIVATE_ETAGS.get(char_id)
@@ -124,14 +127,18 @@ async def fetch_character_private(char_id: str):
 
     resp = await client.get(url, headers=headers, timeout=10)
     if resp.status_code == 304:
-        logger.info(f"Character {char_id} not modified (ETag cache hit)")
+        cached = CHAR_PRIVATE_CACHE.get(char_id)
+        if cached:
+            logger.info(f"Character {char_id} not modified (ETag cache hit); using cached private data")
+            return cached
+        # cache miss: fall back to a normal fetch
         resp = await client.get(url, headers=char_headers(), timeout=10)
-        resp.raise_for_status()
-        return resp.json()
 
     resp.raise_for_status()
-    CHAR_PRIVATE_ETAGS[char_id] = resp.headers.get("etag")
-    return resp.json()
+    CHAR_PRIVATE_ETAGS[char_id] = resp.headers.get("etag") or ""
+    data = resp.json()
+    CHAR_PRIVATE_CACHE[char_id] = data
+    return data
 
 async def fetch_models():
     """Fetch available models from external API.
@@ -250,10 +257,35 @@ async def detect_emotion(text):
         logger.warning(f"Emotion detection failed: {e}")
         return None
 
+async def identity_resolve(external_id: str):
+    """Resolve external user ID to identity data.
+    
+    :param external_id: External identifier (e.g. chainlit:username:alice)
+    :type external_id: str
+    :return: Identity data with person_id and preferred_name, or empty dict if unavailable
+    :rtype: dict
+    """
+    if not IDENTITY_API_URL:
+        return {}
+    headers = {"x-api-key": IDENTITY_API_KEY} if IDENTITY_API_KEY else {}
+    try:
+        r = await client.get(
+            f"{IDENTITY_API_URL}/identity/resolve",
+            params={"external_id": external_id},
+            headers=headers,
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logger.warning(f"Identity resolve failed for {external_id}: {e}")
+        return {}
+
 # Load characters from API or cache
 CHAR_INDEX = {}
 CHAR_LIST = []
 CHAR_PRIVATE_ETAGS = {}
+CHAR_PRIVATE_CACHE = {}
 PROFILE_NAME_TO_ID = {}
 
 # Validate configuration
@@ -357,8 +389,24 @@ async def start():
         return
 
     cl.user_session.set("char", char)
-    cl.user_session.set("history", [{"role": "system", "content": char["prompts"]["system"]}])
-    logger.info(f"Chat started with character: {char['name']}")
+    cl.user_session.set("char_id", char_id)
+    
+    # Resolve user identity
+    app_user = cl.user_session.get("user")
+    username = getattr(app_user, "identifier", None) if app_user else None
+    external_user_id = f"chainlit:username:{username}" if username else "chainlit:anonymous"
+    cl.user_session.set("external_user_id", external_user_id)
+    
+    ident = await identity_resolve(external_user_id)
+    cl.user_session.set("person_id", ident.get("person_id"))
+    preferred_name = ident.get("preferred_name") or username or "there"
+    cl.user_session.set("preferred_name", preferred_name)
+    
+    # Inject identity hint into system prompt
+    identity_hint = f"The user's preferred name is {preferred_name}. Address them by this name when natural.\n\n"
+    system_text = (char.get("prompts") or {}).get("system") or ""
+    cl.user_session.set("history", [{"role": "system", "content": identity_hint + system_text}])
+    logger.info(f"Chat started with character: {char['name']} for user: {username} (preferred: {preferred_name})")
 
     # Model selection sidebar with error handling
     try:
@@ -413,6 +461,17 @@ async def main(message: cl.Message):
     :param message: Incoming message from user
     :type message: cl.Message
     """
+    
+    # Debug command: /whoami
+    if message.content.strip().lower() == "/whoami":
+        await cl.Message(
+            content=(
+                f"external_user_id: {cl.user_session.get('external_user_id')}\n"
+                f"person_id: {cl.user_session.get('person_id')}\n"
+                f"preferred_name: {cl.user_session.get('preferred_name')}"
+            )
+        ).send()
+        return
 
     char = cl.user_session.get("char")
     if not char:
@@ -429,8 +488,13 @@ async def main(message: cl.Message):
     default_model = cl.user_session.get("default_model")
     selected_model = settings.get("Model", default_model)
 
-    history = cl.user_session.get("history", [{"role": "system", "content": char.get("prompts", {}).get("system", "")}])
+    history = cl.user_session.get("history")
+    if not history:
+        preferred_name = cl.user_session.get("preferred_name", "there")
+        identity_hint = f"The user's preferred name is {preferred_name}. Address them by this name when natural.\n\n"
+        history = [{"role": "system", "content": identity_hint + char.get("prompts", {}).get("system", "")}]
     history.append({"role": "user", "content": message.content})
+    append_event("user", message.content)
 
     author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
 
@@ -461,6 +525,60 @@ async def main(message: cl.Message):
 
     history.append({"role": "assistant", "content": reply})
     cl.user_session.set("history", history)
+    append_event("assistant", reply)
+
+def session_id() -> str:
+    """Get current session ID.
+    
+    :return: Session identifier with chainlit prefix
+    :rtype: str
+    """
+    sid = cl.user_session.get("id") or "unknown"
+    return f"chainlit:{sid}"
+
+def append_event(sender: str, text: str):
+    """Append conversation event to session log.
+    
+    Creates NDJSON log files in /state/sessions/<person_id>/<char_id>/<session_id>.ndjson
+    for persistent conversation history. Gracefully handles failures without disrupting chat.
+    
+    :param sender: Message sender (user or assistant)
+    :type sender: str
+    :param text: Message content
+    :type text: str
+    """
+    try:
+        pid = cl.user_session.get("person_id") or "unknown_person"
+        cid = cl.user_session.get("char_id") or "unknown_char"
+        sid = session_id()
+        p = STATE_DIR / "sessions" / pid / cid
+        p.mkdir(parents=True, exist_ok=True)
+        f = p / f"{sid.replace(':', '_')}.ndjson"
+        evt = {
+            "ts": int(time.time()),
+            "source": "chainlit",
+            "session_id": sid,
+            "person_id": pid,
+            "char_id": cid,
+            "sender": sender,
+            "text": text,
+        }
+        with f.open("a", encoding="utf-8") as w:
+            w.write(json.dumps(evt, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to append event: {e}")
+
+@cl.on_chat_end
+async def on_chat_end():
+    """Clean up resources when chat session ends.
+    
+    Closes the global HTTP client to prevent connection leaks.
+    Logs warning if cleanup fails but does not raise exceptions.
+    """
+    try:
+        await client.aclose()
+    except Exception as e:
+        logger.warning(f"Failed to close HTTP client: {e}")
 
 @cl.action_callback("heartbeat")
 async def heartbeat():
