@@ -43,9 +43,10 @@ The identity API must support:
 
 ## Behavior
 
-- **Identity API configured:** Characters use preferred names from identity service
+- **Identity API configured:** Characters use preferred names from identity service with strengthened hints
 - **Identity API unavailable:** Falls back to username or "there"
 - **Anonymous users:** Uses `chainlit:anonymous` as external_id
+- **Name enforcement:** System prompt tells model it already knows the user's name
 
 ## Testing
 

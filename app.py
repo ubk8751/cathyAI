@@ -436,8 +436,7 @@ async def start():
     cl.user_session.set("char_id", char_id)
     
     # Resolve user identity
-    app_user = cl.user_session.get("user")
-    username = getattr(app_user, "identifier", None) if app_user else None
+    username = getattr(cl.user, "identifier", None)
     external_user_id = f"chainlit:username:{username}" if username else "chainlit:anonymous"
     cl.user_session.set("external_user_id", external_user_id)
     
@@ -447,7 +446,11 @@ async def start():
     cl.user_session.set("preferred_name", preferred_name)
     
     # Inject identity hint into system prompt
-    identity_hint = f"The user's preferred name is {preferred_name}. Address them by this name when natural.\n\n"
+    identity_hint = (
+        f"You are chatting with a user whose preferred name is '{preferred_name}'. "
+        f"Always address them as '{preferred_name}' unless they explicitly ask otherwise. "
+        f"Do not ask them what their name is - you already know it.\n\n"
+    )
     system_text = (char.get("prompts") or {}).get("system") or ""
     cl.user_session.set("history", [{"role": "system", "content": identity_hint + system_text}])
     logger.info(f"Chat started with character: {char['name']} for user: {username} (preferred: {preferred_name})")
@@ -538,7 +541,11 @@ async def main(message: cl.Message):
     history = cl.user_session.get("history")
     if not history:
         preferred_name = cl.user_session.get("preferred_name", "there")
-        identity_hint = f"The user's preferred name is {preferred_name}. Address them by this name when natural.\n\n"
+        identity_hint = (
+            f"You are chatting with a user whose preferred name is '{preferred_name}'. "
+            f"Always address them as '{preferred_name}' unless they explicitly ask otherwise. "
+            f"Do not ask them what their name is - you already know it.\n\n"
+        )
         history = [{"role": "system", "content": identity_hint + char.get("prompts", {}).get("system", "")}]
     history.append({"role": "user", "content": message.content})
     append_event("user", message.content)
@@ -578,16 +585,9 @@ async def main(message: cl.Message):
 async def on_chat_end():
     """Clean up resources when chat session ends.
     
-    Closes per-session HTTP client and logs session end event.
-    Logs warning if cleanup fails but does not raise exceptions.
+    Logs session end event for persistent conversation tracking.
     """
     append_event("system", "session_end")
-    session_client = cl.user_session.get("http_client")
-    if session_client:
-        try:
-            await session_client.aclose()
-        except Exception as e:
-            logger.warning(f"Failed to close session HTTP client: {e}")
 
 @cl.action_callback("heartbeat")
 async def heartbeat():
@@ -597,3 +597,36 @@ async def heartbeat():
     :rtype: str
     """
     return "Active"
+
+# Shutdown hook for clean container stop
+import atexit
+import asyncio
+import signal
+
+def _close_httpx_sync():
+    """Best-effort close for the global AsyncClient on interpreter exit."""
+    try:
+        loop = asyncio.get_event_loop()
+    except Exception:
+        loop = None
+
+    if loop and loop.is_running():
+        # Schedule and hope the loop still runs long enough
+        try:
+            loop.create_task(client.aclose())
+        except Exception:
+            pass
+        return
+
+    # No running loop: create one just to close
+    try:
+        asyncio.run(client.aclose())
+    except Exception:
+        pass
+
+def _handle_sigterm(*_):
+    _close_httpx_sync()
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigterm)
+atexit.register(_close_httpx_sync)
