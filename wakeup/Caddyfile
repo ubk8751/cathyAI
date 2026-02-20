@@ -1,0 +1,15 @@
+:80 {
+  # Try to proxy to the UI
+  handle {
+    reverse_proxy webbui_chat:8000 {
+      health_uri /health
+      health_interval 2s
+      health_timeout 1s
+    }
+  }
+
+  # If the UI isn't healthy, call the helper (which starts it and redirects)
+  handle_errors {
+    reverse_proxy wakeup_helper:8080
+  }
+}

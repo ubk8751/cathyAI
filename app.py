@@ -294,6 +294,50 @@ if not CHAR_API_URL:
 if not CHAR_API_KEY:
     logger.warning("CHAR_API_KEY not configured (character-api may reject requests)")
 
+def session_id() -> str:
+    """Get current session ID.
+    
+    :return: Session identifier with chainlit prefix
+    :rtype: str
+    """
+    sid = cl.user_session.get("id") or "unknown"
+    return f"chainlit:{sid}"
+
+def append_event(sender: str, text: str):
+    """Append conversation event to session log.
+    
+    Creates NDJSON log files in /state/sessions/<person_id>/<char_id>/<session_id>.ndjson
+    for persistent conversation history. Gracefully handles failures without disrupting chat.
+    
+    :param sender: Message sender (user, assistant, or system)
+    :type sender: str
+    :param text: Message content
+    :type text: str
+    """
+    try:
+        pid = cl.user_session.get("person_id") or "unknown_person"
+        cid = cl.user_session.get("char_id") or "unknown_char"
+        eid = cl.user_session.get("external_user_id") or "unknown"
+        sid = session_id()
+        p = STATE_DIR / "sessions" / pid / cid
+        p.mkdir(parents=True, exist_ok=True)
+        f = p / f"{sid.replace(':', '_')}.ndjson"
+        evt = {
+            "ts": int(time.time() * 1000),
+            "source": "chainlit",
+            "session_id": sid,
+            "person_id": pid,
+            "char_id": cid,
+            "external_user_id": eid,
+            "sender": sender,
+            "text": text,
+            "len": len(text),
+        }
+        with f.open("a", encoding="utf-8") as w:
+            w.write(json.dumps(evt, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to append event: {e}")
+
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
     """Authenticate user against SQLite database.
@@ -442,6 +486,9 @@ async def start():
         ).send()
     except Exception as e:
         logger.error(f"Failed to send chat settings: {e}")
+    
+    # Log session start
+    append_event("system", f"session_start character={char_id}")
 
 @cl.on_settings_update
 async def update_settings(settings):
@@ -527,58 +574,20 @@ async def main(message: cl.Message):
     cl.user_session.set("history", history)
     append_event("assistant", reply)
 
-def session_id() -> str:
-    """Get current session ID.
-    
-    :return: Session identifier with chainlit prefix
-    :rtype: str
-    """
-    sid = cl.user_session.get("id") or "unknown"
-    return f"chainlit:{sid}"
-
-def append_event(sender: str, text: str):
-    """Append conversation event to session log.
-    
-    Creates NDJSON log files in /state/sessions/<person_id>/<char_id>/<session_id>.ndjson
-    for persistent conversation history. Gracefully handles failures without disrupting chat.
-    
-    :param sender: Message sender (user or assistant)
-    :type sender: str
-    :param text: Message content
-    :type text: str
-    """
-    try:
-        pid = cl.user_session.get("person_id") or "unknown_person"
-        cid = cl.user_session.get("char_id") or "unknown_char"
-        sid = session_id()
-        p = STATE_DIR / "sessions" / pid / cid
-        p.mkdir(parents=True, exist_ok=True)
-        f = p / f"{sid.replace(':', '_')}.ndjson"
-        evt = {
-            "ts": int(time.time()),
-            "source": "chainlit",
-            "session_id": sid,
-            "person_id": pid,
-            "char_id": cid,
-            "sender": sender,
-            "text": text,
-        }
-        with f.open("a", encoding="utf-8") as w:
-            w.write(json.dumps(evt, ensure_ascii=False) + "\n")
-    except Exception as e:
-        logger.warning(f"Failed to append event: {e}")
-
 @cl.on_chat_end
 async def on_chat_end():
     """Clean up resources when chat session ends.
     
-    Closes the global HTTP client to prevent connection leaks.
+    Closes per-session HTTP client and logs session end event.
     Logs warning if cleanup fails but does not raise exceptions.
     """
-    try:
-        await client.aclose()
-    except Exception as e:
-        logger.warning(f"Failed to close HTTP client: {e}")
+    append_event("system", "session_end")
+    session_client = cl.user_session.get("http_client")
+    if session_client:
+        try:
+            await session_client.aclose()
+        except Exception as e:
+            logger.warning(f"Failed to close session HTTP client: {e}")
 
 @cl.action_callback("heartbeat")
 async def heartbeat():
