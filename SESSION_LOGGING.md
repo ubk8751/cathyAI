@@ -27,37 +27,57 @@ Each line is a JSON event:
 
 ```json
 {
-  "ts": 1704067200,
+  "ts": 1704067200000,
   "source": "chainlit",
   "session_id": "chainlit:abc123",
   "person_id": "p_me",
   "char_id": "char_cathy",
+  "external_user_id": "chainlit:username:ubk8751",
   "sender": "user",
-  "text": "How are you today?"
+  "text": "How are you today?",
+  "len": 18
 }
 ```
 
 ```json
 {
-  "ts": 1704067205,
+  "ts": 1704067205000,
   "source": "chainlit",
   "session_id": "chainlit:abc123",
   "person_id": "p_me",
   "char_id": "char_cathy",
+  "external_user_id": "chainlit:username:ubk8751",
   "sender": "assistant",
-  "text": "I'm doing well, Sam! How about you?"
+  "text": "I'm doing well, Sam! How about you?",
+  "len": 36
+}
+```
+
+```json
+{
+  "ts": 1704067210000,
+  "source": "chainlit",
+  "session_id": "chainlit:abc123",
+  "person_id": "p_me",
+  "char_id": "char_cathy",
+  "external_user_id": "chainlit:username:ubk8751",
+  "sender": "system",
+  "text": "session_end",
+  "len": 11
 }
 ```
 
 ### Key Fields
 
-- **ts** - Unix timestamp (seconds)
+- **ts** - Unix timestamp in milliseconds
 - **source** - Always "chainlit" for web UI messages
 - **session_id** - Unique session identifier (format: `chainlit:<uuid>`)
 - **person_id** - Resolved from identity API (e.g., `p_me`)
 - **char_id** - Character identifier (e.g., `char_cathy`)
-- **sender** - Either "user" or "assistant"
+- **external_user_id** - External identity (e.g., `chainlit:username:ubk8751`)
+- **sender** - Either "user", "assistant", or "system"
 - **text** - Message content
+- **len** - Message length in characters
 
 ## Reliability Features
 
@@ -69,8 +89,11 @@ Each line is a JSON event:
 ## Current Behavior
 
 - Events are appended in real-time as messages are sent/received
+- Session start logged when chat begins
+- Session end logged when chat closes (tab closed or session ended)
 - Files persist across container restarts (via `/state` volume mount)
 - No rotation or cleanup (handled by future diary distillation process)
+- Per-session HTTP client cleanup prevents connection leaks
 
 ## Next Steps
 
@@ -115,8 +138,10 @@ docker-compose exec webbui_chat sh -c 'cat /state/sessions/p_me/*/chainlit_*.ndj
 
 Expected output:
 ```json
-{"ts":1704067200,"source":"chainlit","session_id":"chainlit:abc123","person_id":"p_me","char_id":"char_cathy","sender":"user","text":"Hello!"}
-{"ts":1704067205,"source":"chainlit","session_id":"chainlit:abc123","person_id":"p_me","char_id":"char_cathy","sender":"assistant","text":"Hi Sam! How can I help you today?"}
+{"ts":1704067200000,"source":"chainlit","session_id":"chainlit:abc123","person_id":"p_me","char_id":"char_cathy","external_user_id":"chainlit:username:ubk8751","sender":"system","text":"session_start character=char_cathy","len":33}
+{"ts":1704067205000,"source":"chainlit","session_id":"chainlit:abc123","person_id":"p_me","char_id":"char_cathy","external_user_id":"chainlit:username:ubk8751","sender":"user","text":"Hello!","len":6}
+{"ts":1704067210000,"source":"chainlit","session_id":"chainlit:abc123","person_id":"p_me","char_id":"char_cathy","external_user_id":"chainlit:username:ubk8751","sender":"assistant","text":"Hi Sam! How can I help you today?","len":34}
+{"ts":1704067215000,"source":"chainlit","session_id":"chainlit:abc123","person_id":"p_me","char_id":"char_cathy","external_user_id":"chainlit:username:ubk8751","sender":"system","text":"session_end","len":11}
 ```
 
 ## Volume Mount Verification

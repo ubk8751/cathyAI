@@ -172,12 +172,12 @@ STATE_DIR=/state
 - **User Authentication** - SQLite-based password authentication with bcrypt
 - **User Management** - Registration with invite codes, admin API for user control
 - **Identity Resolution** - Optional personalized names via external identity API
-- **Session Logging** - Persistent NDJSON logs in `/state/sessions/` for memory/RAG
+- **Session Logging** - Persistent NDJSON logs in `/state/sessions/` with millisecond timestamps
 - **Live Model Switching** - Sidebar dropdown for model selection
 - **Streaming Chat** - Delta-based parser prevents duplicate text
 - **ETag Caching** - Efficient character data caching with HTTP 304 responses
 - **Optional Emotion Detection** - Configurable emotion analysis
-- **Session History** - Per-user conversation tracking
+- **Session History** - Per-user conversation tracking with session start/end events
 - **Offline Resilience** - Local character cache fallback
 - **Debug Commands** - `/whoami` for identity verification
 
@@ -271,12 +271,14 @@ Test coverage:
 
 ## Docker Deployment
 
-The docker-compose.yaml defines two services:
+The docker-compose.yaml defines four services:
 
 - **webbui_chat** - Main Chainlit application (port 8000)
 - **webbui_auth_api** - FastAPI auth service (port 8001)
+- **wakeup_proxy** - Caddy reverse proxy with auto-wakeup (port 7999)
+- **wakeup_helper** - Container startup helper
 
-Both share the `/state` volume for SQLite database persistence.
+Both chat services share the `/state` volume for SQLite database and session log persistence.
 
 ```bash
 # Build and start
@@ -288,6 +290,14 @@ docker compose logs -f
 # Stop services
 docker compose down
 ```
+
+### Auto-Wakeup Feature
+
+Access the UI via port 7999 for automatic container startup:
+- If containers are stopped, the wakeup proxy detects this
+- Wakeup helper starts the containers via Docker socket
+- Browser is redirected back and connects to the running UI
+- Useful for resource-constrained environments
 
 ---
 

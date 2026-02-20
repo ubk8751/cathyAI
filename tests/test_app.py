@@ -40,6 +40,8 @@ class TestAppStructure:
         assert "MODELS_API_URL=" in content, ".env.template missing MODELS_API_URL"
         assert "CHAR_API_URL=" in content, ".env.template missing CHAR_API_URL"
         assert "CHAR_API_KEY=" in content, ".env.template missing CHAR_API_KEY"
+        assert "IDENTITY_API_URL=" in content, ".env.template missing IDENTITY_API_URL"
+        assert "IDENTITY_API_KEY=" in content, ".env.template missing IDENTITY_API_KEY"
         
         # Authentication
         assert "CHAINLIT_AUTH_SECRET=" in content, ".env.template missing CHAINLIT_AUTH_SECRET"
@@ -61,9 +63,16 @@ class TestAppStructure:
         compose = (REPO_ROOT / "docker-compose.yaml").read_text()
         assert "webbui_chat:" in compose, "docker-compose.yaml missing webbui_chat service"
         assert "webbui_auth_api:" in compose, "docker-compose.yaml missing webbui_auth_api service"
+        assert "wakeup_helper:" in compose, "docker-compose.yaml missing wakeup_helper service"
+        assert "wakeup_proxy:" in compose, "docker-compose.yaml missing wakeup_proxy service"
         assert "8000:8000" in compose, "docker-compose.yaml missing port 8000"
         assert "8001:8001" in compose, "docker-compose.yaml missing port 8001"
+        assert "7999:80" in compose, "docker-compose.yaml missing port 7999"
         assert "./state:/state" in compose, "docker-compose.yaml missing state volume"
+        assert "cathyai_webbui_chat" in compose, "docker-compose.yaml missing container name"
+        assert "cathyai_webbui_auth_api" in compose, "docker-compose.yaml missing container name"
+        assert "cathyai_wakeup_helper" in compose, "docker-compose.yaml missing container name"
+        assert "cathyai_wakeup_proxy" in compose, "docker-compose.yaml missing container name"
 
     def test_setup_scripts_exist(self):
         """Test that setup scripts exist."""
