@@ -141,6 +141,9 @@ alert_style = "classic"
 # Load assistant logo directly from URL.
 logo_file_url = ""
 
+# Favicon
+favicon = "/public/favicon.png"
+
 # Specify a custom build directory for the frontend.
 # This can be used to customize the frontend code.
 # Be careful: If this is a relative path, it should not start with a slash.
