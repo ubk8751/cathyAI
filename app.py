@@ -458,10 +458,6 @@ def auth_callback(username: str, password: str):
         role = data.get("role", "user")
         logger.info(f"[AUTH] ok role={role}")
         
-        # Persist into session for later handlers
-        cl.user_session.set("auth_username", username)
-        cl.user_session.set("auth_role", role)
-        
         return cl.User(identifier=username, metadata={"role": role})
     except Exception as e:
         logger.exception(f"[AUTH] auth_api error: {e}")
@@ -513,6 +509,14 @@ async def start():
     and model selection dropdown in sidebar.
     """
     global CHAR_LIST, CHAR_INDEX, PROFILE_NAME_TO_ID
+
+    # Pull authenticated user from Chainlit session (context exists here)
+    u = cl.user_session.get("user")
+    username = getattr(u, "identifier", None) if u else None
+    role = (getattr(u, "metadata", {}) or {}).get("role") if u else None
+
+    cl.user_session.set("auth_username", username)
+    cl.user_session.set("auth_role", role)
 
     if not CHAR_LIST:
         try:
@@ -637,9 +641,9 @@ async def main(message: cl.Message):
         username = cl.user_session.get("auth_username")
         role = cl.user_session.get("auth_role")
         
-        # Fallback to chainlit user object
+        # Fallback to chainlit user object if not in session
         if not username or not role:
-            u = getattr(cl, "user", None)
+            u = cl.user_session.get("user")
             if u:
                 username = username or getattr(u, "identifier", None)
                 role = role or (getattr(u, "metadata", {}) or {}).get("role")
