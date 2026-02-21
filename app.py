@@ -10,7 +10,6 @@ import chainlit as cl
 import json
 import time
 import logging
-import html
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -407,46 +406,16 @@ def character_author_name(char: dict) -> str:
     return character_display_name(char)
 
 async def send_character_message(content: str, char: dict) -> cl.Message:
-    """Render character message as HTML (avatar + name + body).
+    """Send message using built-in Chainlit avatar via author/profile-name match.
     
     :param content: Message content
     :type content: str
-    :param char: Character dictionary with name and avatar_url
+    :param char: Character dictionary
     :type char: dict
     :return: Sent message object
     :rtype: cl.Message
     """
-    display_name = character_display_name(char)
-
-    avatar_url = ""
-    if isinstance(char, dict):
-        avatar_url = (char.get("avatar_url") or "").strip()
-        if not avatar_url and CHAR_API_URL:
-            avatar = str(char.get("avatar") or "").strip()
-            if avatar:
-                avatar_url = f"{CHAR_API_URL}/avatars/{avatar}"
-
-    safe_name = html.escape(display_name)
-    safe_body = html.escape(content or "").replace("\n", "<br>")
-
-    if avatar_url:
-        safe_avatar = html.escape(avatar_url)
-        avatar_html = f'<img src="{safe_avatar}" class="char-avatar" alt="{safe_name}">'
-    else:
-        avatar_html = '<div class="char-avatar char-avatar-fallback" aria-hidden="true"></div>'
-
-    html_content = f"""
-<div class="char-msg">
-  <div class="char-msg-header">
-    {avatar_html}
-    <span class="char-name">{safe_name}</span>
-  </div>
-  <div class="char-msg-body">{safe_body}</div>
-</div>
-"""
-
-    # IMPORTANT: HTML goes in content, not cl.Text element
-    msg = cl.Message(content=html_content, author="")
+    msg = cl.Message(content=content, author=character_display_name(char))
     await msg.send()
     return msg
 
@@ -562,16 +531,22 @@ async def chat_profiles():
         logger.error("No characters available")
         return []
     
-    CHAR_INDEX = {char["id"]: char for char in CHAR_LIST}
-    PROFILE_NAME_TO_ID = {char["name"]: char["id"] for char in CHAR_LIST if "name" in char and "id" in char}
+    CHAR_INDEX = {char["id"]: char for char in CHAR_LIST if "id" in char}
+    PROFILE_NAME_TO_ID = {
+        character_display_name(char): char["id"]
+        for char in CHAR_LIST
+        if "id" in char
+    }
     
     profiles = []
     for char in CHAR_LIST:
         try:
-            icon = char.get("avatar_url") or f"{CHAR_API_URL}/avatars/{char.get('avatar', '')}" if CHAR_API_URL else ""
+            icon = char.get("avatar_url") or (f"{CHAR_API_URL}/avatars/{char.get('avatar', '')}" if CHAR_API_URL else "")
+            profile_name = character_display_name(char)
+            
             profiles.append(
                 cl.ChatProfile(
-                    name=char["name"],
+                    name=profile_name,
                     icon=icon,
                     markdown_description=char.get("description", ""),
                     starters=[cl.Starter(label="Greet me", message=char.get("greeting", "Hello there!"))]
@@ -605,7 +580,11 @@ async def start():
             logger.warning(f"Failed to fetch characters from API in start(): {e}, using cache")
             CHAR_LIST = load_cached_characters()
         CHAR_INDEX = {c["id"]: c for c in CHAR_LIST} if CHAR_LIST else {}
-        PROFILE_NAME_TO_ID = {c["name"]: c["id"] for c in CHAR_LIST if "name" in c and "id" in c}
+        PROFILE_NAME_TO_ID = {
+            character_display_name(c): c["id"]
+            for c in CHAR_LIST
+            if "id" in c
+        }
 
     if not CHAR_LIST:
         await cl.Message(content="⚠️ No characters loaded. Please check configuration.").send()
@@ -870,19 +849,20 @@ async def main(message: cl.Message):
     append_event("user", message.content)
 
     reply = ""
-    temp_msg = cl.Message(content="Thinking...")
-    await temp_msg.send()
+    msg = cl.Message(content="", author=character_display_name(char))
+    await msg.send()
 
     try:
         logger.info(f"Calling chat API with model: {selected_model}")
         async for token in stream_chat(selected_model, history):
             reply += token
+            await msg.stream_token(token)
     except Exception as e:
         logger.error(f"Chat API error: {e}")
         reply = f"⚠️ Chat API error: {str(e)}"
+        await msg.stream_token(reply)
 
-    await temp_msg.remove()
-    await send_character_message(reply, char)
+    await msg.update()
 
     # Emotion detection with error handling
     if reply.strip() and EMOTION_ENABLED:
