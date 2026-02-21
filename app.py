@@ -419,6 +419,27 @@ async def send_character_message(content: str, char: dict) -> cl.Message:
     await msg.send()
     return msg
 
+async def register_character_avatar(char: dict):
+    """Register Chainlit avatar for this character's message author name.
+    
+    :param char: Character dictionary with avatar info
+    :type char: dict
+    """
+    author_name = character_display_name(char)
+
+    avatar_url = (char.get("avatar_url") or "").strip()
+    if not avatar_url and CHAR_API_URL:
+        avatar = str(char.get("avatar") or "").strip()
+        if avatar:
+            avatar_url = f"{CHAR_API_URL}/avatars/{avatar}"
+
+    if avatar_url:
+        try:
+            await cl.Avatar(name=author_name, url=avatar_url).send()
+            logger.info("Registered avatar for author=%r url=%r", author_name, avatar_url)
+        except Exception as e:
+            logger.warning("Failed to register avatar for %r: %s", author_name, e)
+
 def is_admin() -> bool:
     """Check if current user has admin role.
     
@@ -608,6 +629,9 @@ async def start():
 
     cl.user_session.set("char", char)
     cl.user_session.set("char_id", char_id)
+    
+    # Register character avatar for message author
+    await register_character_avatar(char)
     
     # Resolve user identity (reliable)
     username = cl.user_session.get("auth_username")
