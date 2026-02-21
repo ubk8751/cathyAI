@@ -29,6 +29,10 @@ services:
       - ./state:/state
     environment:
       PYTHONPATH: /app
+      USER_DB_PATH: /state/users.sqlite
+      USER_ADMIN_API_KEY: ${USER_ADMIN_API_KEY}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
     env_file:
       - .env
     restart: unless-stopped
