@@ -1,4 +1,8 @@
 /* Character message styling */
+
+/* TEMPORARY TEST - remove after verifying CSS loads */
+body { outline: 3px solid red !important; }
+
 .char-msg {
   margin: 0.35rem 0 0.85rem 0;
 }
@@ -16,6 +20,7 @@
   border-radius: 999px;
   object-fit: cover;
   flex: 0 0 28px;
+  display: block;
 }
 
 .char-avatar-fallback {
