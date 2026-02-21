@@ -7,6 +7,9 @@ from users import create_user, disable_user, enable_user, create_invite, list_us
 from users import init_db
 init_db()
 
+from bootstrap_admin import bootstrap
+bootstrap()
+
 app = FastAPI(title="cathyAI Auth API")
 
 REGISTRATION_ENABLED = os.getenv("REGISTRATION_ENABLED", "1") == "1"

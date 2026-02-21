@@ -3,7 +3,7 @@
 import sqlite3
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from passlib.hash import bcrypt
 
@@ -86,14 +86,14 @@ def create_user(username: str, password: str, role: str = "user", invite_code: s
         # Mark invite as used
         conn.execute(
             "UPDATE invites SET used_by = ?, used_at = ?, is_active = 0 WHERE code = ?",
-            (username, datetime.utcnow().isoformat(), invite_code)
+            (username, datetime.now(timezone.utc).isoformat(), invite_code)
         )
     
     # Create user
     pw_hash = bcrypt.hash(password)
     conn.execute(
         "INSERT INTO users (username, pw_hash, role, created_at) VALUES (?, ?, ?, ?)",
-        (username, pw_hash, role, datetime.utcnow().isoformat())
+        (username, pw_hash, role, datetime.now(timezone.utc).isoformat())
     )
     conn.commit()
     conn.close()
@@ -134,7 +134,7 @@ def verify_user(username: str, password: str) -> tuple[bool, str]:
     # Update last login
     conn.execute(
         "UPDATE users SET last_login_at = ? WHERE username = ?",
-        (datetime.utcnow().isoformat(), username)
+        (datetime.now(timezone.utc).isoformat(), username)
     )
     conn.commit()
     conn.close()
@@ -205,12 +205,12 @@ def create_invite(expires_hours: int = None) -> str:
     code = secrets.token_urlsafe(12)
     expires_at = None
     if expires_hours:
-        expires_at = (datetime.utcnow() + timedelta(hours=expires_hours)).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).isoformat()
     
     conn = sqlite3.connect(USER_DB_PATH)
     conn.execute(
         "INSERT INTO invites (code, created_at, expires_at) VALUES (?, ?, ?)",
-        (code, datetime.utcnow().isoformat(), expires_at)
+        (code, datetime.now(timezone.utc).isoformat(), expires_at)
     )
     conn.commit()
     conn.close()
@@ -262,3 +262,49 @@ def set_role(username: str, role: str) -> tuple[bool, str]:
     
     conn.close()
     return True, f"Role updated to {role}"
+
+def count_users() -> int:
+    """Count total users in database.
+    
+    :return: Number of users
+    :rtype: int
+    """
+    init_db()
+    conn = sqlite3.connect(USER_DB_PATH)
+    n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    conn.close()
+    return int(n)
+
+def upsert_user(username: str, password: str, role: str = "user") -> tuple[bool, str]:
+    """Create user if missing; if exists, update role/is_active (leave password alone).
+    
+    :param username: Username to create or update
+    :type username: str
+    :param password: Password for new user (ignored if user exists)
+    :type password: str
+    :param role: User role (admin or user)
+    :type role: str
+    :return: Tuple of (success, message)
+    :rtype: tuple[bool, str]
+    """
+    if role not in {"admin", "user"}:
+        return False, "Role must be 'admin' or 'user'"
+
+    init_db()
+    conn = sqlite3.connect(USER_DB_PATH)
+    row = conn.execute("SELECT username FROM users WHERE username=?", (username,)).fetchone()
+
+    if not row:
+        pw_hash = bcrypt.hash(password)
+        conn.execute(
+            "INSERT INTO users (username, pw_hash, role, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (username, pw_hash, role, datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+        conn.close()
+        return True, f"{role} created"
+
+    conn.execute("UPDATE users SET role=?, is_active=1 WHERE username=?", (role, username))
+    conn.commit()
+    conn.close()
+    return True, f"{role} ensured"

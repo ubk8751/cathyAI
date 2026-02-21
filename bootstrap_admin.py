@@ -1,38 +1,32 @@
 """Bootstrap admin user.
 
-Command-line utility to create initial admin user account.
-Usage: python bootstrap_admin.py <username>
+Automatic admin account creation on first startup.
+Runs once if database is empty and bootstrap env vars are set.
 """
 
-import sys
-import getpass
-from users import create_user, init_db
+import os
+from users import count_users, upsert_user
 
-def main():
-    """Create admin user from command line.
+def bootstrap():
+    """Create initial admin user if database is empty.
     
-    Prompts for password securely and creates admin account.
-    Exits with code 1 on failure.
+    Only runs if BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD
+    are set and the database has no users yet.
     """
-    if len(sys.argv) < 2:
-        print("Usage: python bootstrap_admin.py <username>")
-        sys.exit(1)
-    
-    username = sys.argv[1]
-    password = getpass.getpass(f"Password for {username}: ")
-    
-    if not password:
-        print("Password cannot be empty")
-        sys.exit(1)
-    
-    init_db()
-    success, message = create_user(username, password, role="admin", invite_code=None)
-    
-    if success:
-        print(f"✅ Admin user '{username}' created successfully")
-    else:
-        print(f"❌ Failed: {message}")
-        sys.exit(1)
+    username = os.getenv("BOOTSTRAP_ADMIN_USERNAME", "").strip()
+    password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "").strip()
+
+    if not username or not password:
+        print("bootstrap_admin: BOOTSTRAP_ADMIN_USERNAME/PASSWORD not set; skipping")
+        return
+
+    # only bootstrap if DB is empty (safe default)
+    if count_users() > 0:
+        print("bootstrap_admin: users already exist; skipping")
+        return
+
+    ok, msg = upsert_user(username, password, role="admin")
+    print(f"bootstrap_admin: {ok} {msg}")
 
 if __name__ == "__main__":
-    main()
+    bootstrap()

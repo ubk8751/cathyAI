@@ -113,6 +113,10 @@ REGISTRATION_ENABLED=1
 REGISTRATION_REQUIRE_INVITE=1
 USER_ADMIN_API_KEY=<generate with generate_secrets.py>
 
+# Bootstrap admin (only used if DB is empty)
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_PASSWORD=<change after first login>
+
 # Optional: Emotion detection (disabled by default)
 EMOTION_ENABLED=0
 EMOTION_API_URL=http://your-api:8001/emotion
@@ -170,6 +174,7 @@ STATE_DIR=/state
 
 - **Character Profiles** - Dropdown with avatars loaded from external API
 - **User Authentication** - SQLite-based password authentication with bcrypt
+- **Bootstrap Admin** - Automatic admin account creation on first startup if database is empty
 - **User Management** - Registration with invite codes, admin API for user control
 - **Identity Resolution** - Optional personalized names via external identity API
 - **Session Logging** - Persistent NDJSON logs in `/state/sessions/` with millisecond timestamps
@@ -186,6 +191,24 @@ See [USER_MANAGEMENT.md](USER_MANAGEMENT.md) for authentication setup.
 ---
 
 ## User Management
+
+### Bootstrap Admin
+
+On first startup with an empty database, the auth API automatically creates an admin account if `BOOTSTRAP_ADMIN_USERNAME` and `BOOTSTRAP_ADMIN_PASSWORD` are set in `.env`:
+
+```bash
+# In .env
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_PASSWORD=your-secure-password
+```
+
+The bootstrap process:
+1. Runs automatically when auth_api.py starts
+2. Only creates admin if database has zero users
+3. Skips if users already exist (safe for restarts)
+4. Logs bootstrap status to console
+
+**Security**: Change the bootstrap password immediately after first login.
 
 ### Admin Operations
 
