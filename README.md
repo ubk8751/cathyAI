@@ -44,10 +44,16 @@ cathyAI/
 ├── tests/                          # Test suites
 │   ├── test_app.py                 # Core application tests
 │   ├── test_auth.py                # Authentication tests
-│   ├── test_webbui_chat.py         # Chat UI tests
-│   └── test_characters_api.py      # External API integration tests
+│   └── test_webbui_chat.py         # Chat UI tests
+├── public/                         # Static assets
+│   └── favicon.png                 # Browser tab icon
+├── wakeup/                         # Auto-wakeup proxy
+│   ├── Caddyfile                   # Caddy configuration
+│   └── wakeup.py                   # Container startup helper
 ├── .github/workflows/test.yml      # CI/CD pipeline
 ├── setup_git.sh                    # Git workflow setup script
+├── IDENTITY_SETUP.md               # Identity API documentation
+├── SESSION_LOGGING.md              # Session logging documentation
 └── USER_MANAGEMENT.md              # Authentication documentation
 ```
 
@@ -172,9 +178,10 @@ STATE_DIR=/state
 
 ### Features
 
-- **Character Profiles** - Dropdown with avatars loaded from external API
+- **Character Profiles** - Dropdown with avatars and full names, messages show nicknames
 - **User Authentication** - SQLite-based password authentication with bcrypt
 - **Bootstrap Admin** - Automatic admin account creation on first startup if database is empty
+- **Character Greetings** - Automatic greeting message when starting chat with a character
 - **User Management** - Registration with invite codes, admin API for user control
 - **Identity Resolution** - Optional personalized names via external identity API
 - **Session Logging** - Persistent NDJSON logs in `/state/sessions/` with millisecond timestamps
@@ -270,7 +277,7 @@ pytest tests/test_app.py::TestAppStructure::test_main_app_exists
 Test coverage:
 - **test_app.py** (10 tests) - Application structure and dependencies
 - **test_auth.py** (22 tests) - User authentication, registration, invite codes, admin operations
-- **test_webbui_chat.py** (7 tests) - Chat UI Docker configuration and imports
+- **test_webbui_chat.py** (7 tests) - Chat UI imports and function existence
 
 ---
 

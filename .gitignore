@@ -2,10 +2,8 @@ venv
 .venv
 **/__pycache__/
 **/.pytest_cache/
-=24.0
 .env
 .amazonq
-# runtime state
 state/
 *.sqlite
 *.db

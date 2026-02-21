@@ -555,20 +555,19 @@ async def chat_profiles():
     
     CHAR_INDEX = {char["id"]: char for char in CHAR_LIST if "id" in char}
     PROFILE_NAME_TO_ID = {
-        character_display_name(char): char["id"]
+        char["name"]: char["id"]
         for char in CHAR_LIST
-        if "id" in char
+        if "id" in char and "name" in char
     }
     
     profiles = []
     for char in CHAR_LIST:
         try:
             icon = char.get("avatar_url") or (f"{CHAR_API_URL}/avatars/{char.get('avatar', '')}" if CHAR_API_URL else "")
-            profile_name = character_display_name(char)
             
             profiles.append(
                 cl.ChatProfile(
-                    name=profile_name,
+                    name=char["name"],
                     icon=icon,
                     markdown_description=char.get("description", ""),
                     starters=[cl.Starter(label="Greet me", message=char.get("greeting", "Hello there!"))]
@@ -603,9 +602,9 @@ async def start():
             CHAR_LIST = load_cached_characters()
         CHAR_INDEX = {c["id"]: c for c in CHAR_LIST} if CHAR_LIST else {}
         PROFILE_NAME_TO_ID = {
-            character_display_name(c): c["id"]
+            c["name"]: c["id"]
             for c in CHAR_LIST
-            if "id" in c
+            if "id" in c and "name" in c
         }
 
     if not CHAR_LIST:
