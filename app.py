@@ -616,6 +616,12 @@ async def start():
     
     # Log session start
     append_event("system", f"session_start character={char_id}")
+    
+    # Send character greeting
+    greeting = char.get("greeting")
+    if greeting:
+        display_name = char.get("nickname", char.get("name", "Assistant")).split(" ")[0]
+        await cl.Message(content=greeting, author=display_name).send()
 
 @cl.on_settings_update
 async def update_settings(settings):
@@ -764,8 +770,8 @@ async def main(message: cl.Message):
 
     model_available = cl.user_session.get("model_available", False)
     if not model_available:
-        author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
-        await cl.Message(content="⚠️ No models available. Please check API configuration.", author=author_label).send()
+        display_name = char.get("nickname", char.get("name", "Assistant")).split(" ")[0]
+        await cl.Message(content="⚠️ No models available. Please check API configuration.", author=display_name).send()
         return
 
     settings = cl.user_session.get("settings", {})
@@ -784,10 +790,10 @@ async def main(message: cl.Message):
     history.append({"role": "user", "content": message.content})
     append_event("user", message.content)
 
-    author_label = char.get("nickname", char["name"].split(" ", 1)[0] if " " in char["name"] else char["name"])
+    display_name = char.get("nickname", char.get("name", "Assistant")).split(" ")[0]
 
     reply = ""
-    msg = cl.Message(content="", author=author_label)
+    msg = cl.Message(content="", author=display_name)
     await msg.send()
 
     try:
