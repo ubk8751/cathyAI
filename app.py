@@ -435,7 +435,8 @@ async def register_character_avatar(char: dict):
 
     if avatar_url:
         try:
-            await cl.Avatar(name=author_name, url=avatar_url).send()
+            avatar = cl.Avatar(name=author_name, url=avatar_url)
+            await avatar.send()
             logger.info("Registered avatar for author=%r url=%r", author_name, avatar_url)
         except Exception as e:
             logger.warning("Failed to register avatar for %r: %s", author_name, e)
