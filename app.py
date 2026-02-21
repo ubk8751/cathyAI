@@ -10,6 +10,7 @@ import chainlit as cl
 import json
 import time
 import logging
+import html
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -370,6 +371,85 @@ def session_id() -> str:
     sid = cl.user_session.get("id") or "unknown"
     return f"chainlit:{sid}"
 
+def character_display_name(char: dict) -> str:
+    """Get character display name: nickname > first name > Assistant.
+    
+    :param char: Character dictionary
+    :type char: dict
+    :return: Display name for character
+    :rtype: str
+    """
+    if not isinstance(char, dict):
+        return "Assistant"
+    nickname = char.get("nickname")
+    if isinstance(nickname, str) and nickname.strip():
+        return nickname.strip()
+    name = char.get("name")
+    if isinstance(name, str) and name.strip():
+        first = name.strip().split(" ")[0].strip()
+        if first:
+            return first
+    return "Assistant"
+
+def character_author_name(char: dict) -> str:
+    """Get exact chat profile name for Chainlit avatar matching.
+    
+    :param char: Character dictionary
+    :type char: dict
+    :return: Full character name for author field
+    :rtype: str
+    """
+    if not isinstance(char, dict):
+        return "Assistant"
+    name = char.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return character_display_name(char)
+
+async def send_character_message(content: str, char: dict) -> cl.Message:
+    """Render character message as HTML (avatar + name + body).
+    
+    :param content: Message content
+    :type content: str
+    :param char: Character dictionary with name and avatar_url
+    :type char: dict
+    :return: Sent message object
+    :rtype: cl.Message
+    """
+    display_name = character_display_name(char)
+
+    avatar_url = ""
+    if isinstance(char, dict):
+        avatar_url = (char.get("avatar_url") or "").strip()
+        if not avatar_url and CHAR_API_URL:
+            avatar = str(char.get("avatar") or "").strip()
+            if avatar:
+                avatar_url = f"{CHAR_API_URL}/avatars/{avatar}"
+
+    safe_name = html.escape(display_name)
+    safe_body = html.escape(content or "").replace("\n", "<br>")
+
+    if avatar_url:
+        safe_avatar = html.escape(avatar_url)
+        avatar_html = f'<img src="{safe_avatar}" class="char-avatar" alt="{safe_name}">'
+    else:
+        avatar_html = '<div class="char-avatar char-avatar-fallback" aria-hidden="true"></div>'
+
+    html_content = f"""
+<div class="char-msg">
+  <div class="char-msg-header">
+    {avatar_html}
+    <span class="char-name">{safe_name}</span>
+  </div>
+  <div class="char-msg-body">{safe_body}</div>
+</div>
+"""
+
+    # IMPORTANT: HTML goes in content, not cl.Text element
+    msg = cl.Message(content=html_content, author="")
+    await msg.send()
+    return msg
+
 def is_admin() -> bool:
     """Check if current user has admin role.
     
@@ -541,6 +621,7 @@ async def start():
     try:
         char = await fetch_character_private(char_id)
         logger.info(f"Fetched full character data for: {char['name']}")
+        logger.info("CHAR UI DEBUG name=%r avatar=%r avatar_url=%r", char.get("name"), char.get("avatar"), char.get("avatar_url"))
     except Exception as e:
         logger.error(f"Failed to fetch character details: {e}")
         await cl.Message(content="⚠️ Failed to load character. Please try again.").send()
@@ -620,8 +701,7 @@ async def start():
     # Send character greeting
     greeting = char.get("greeting")
     if greeting:
-        display_name = char.get("nickname", char.get("name", "Assistant")).split(" ")[0]
-        await cl.Message(content=greeting, author=display_name).send()
+        await send_character_message(greeting, char)
 
 @cl.on_settings_update
 async def update_settings(settings):
@@ -770,8 +850,7 @@ async def main(message: cl.Message):
 
     model_available = cl.user_session.get("model_available", False)
     if not model_available:
-        display_name = char.get("nickname", char.get("name", "Assistant")).split(" ")[0]
-        await cl.Message(content="⚠️ No models available. Please check API configuration.", author=display_name).send()
+        await send_character_message("⚠️ No models available. Please check API configuration.", char)
         return
 
     settings = cl.user_session.get("settings", {})
@@ -790,23 +869,20 @@ async def main(message: cl.Message):
     history.append({"role": "user", "content": message.content})
     append_event("user", message.content)
 
-    display_name = char.get("nickname", char.get("name", "Assistant")).split(" ")[0]
-
     reply = ""
-    msg = cl.Message(content="", author=display_name)
-    await msg.send()
+    temp_msg = cl.Message(content="Thinking...")
+    await temp_msg.send()
 
     try:
         logger.info(f"Calling chat API with model: {selected_model}")
         async for token in stream_chat(selected_model, history):
             reply += token
-            await msg.stream_token(token)
     except Exception as e:
         logger.error(f"Chat API error: {e}")
         reply = f"⚠️ Chat API error: {str(e)}"
-        await msg.stream_token(reply)
 
-    await msg.update()
+    await temp_msg.remove()
+    await send_character_message(reply, char)
 
     # Emotion detection with error handling
     if reply.strip() and EMOTION_ENABLED:
